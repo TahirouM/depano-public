@@ -161,6 +161,8 @@ export function SearchScreen() {
           <FlatList
             data={sorted}
             keyExtractor={(a) => a.id}
+            // Tabs natives iOS : la tab bar flotte au-dessus de la liste ; UIKit ajoute l'inset bas.
+            contentInsetAdjustmentBehavior="automatic"
             contentContainerStyle={{ padding: t.spacing.lg, gap: t.spacing.md, paddingBottom: t.spacing.xxxl }}
             onEndReachedThreshold={0.4}
             onEndReached={() => {

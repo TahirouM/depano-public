@@ -24,8 +24,9 @@ pnpm --filter @depano/mobile start # puis i (iOS), a (Android), w (web)
 | --- | --- |
 | `pnpm --filter @depano/mobile typecheck` | `tsc --noEmit` (strict, `noUncheckedIndexedAccess`) |
 | `pnpm --filter @depano/mobile test` | Vitest : stores, liens profonds |
-| `pnpm --filter @depano/ui typecheck` / `test` | Design system + test de contraste (222 paires) |
+| `pnpm --filter @depano/ui typecheck` / `test` | Design system + test de contraste (222 paires) + logique de repli Liquid Glass |
 | `pnpm --filter @depano/mobile export:ios` | Bundle iOS de production (preuve Metro + monorepo) |
+| `npx expo export --platform ios\|android\|web` (dans `apps/mobile`) | Bundles des 3 plateformes (layouts `.web.tsx` compris) |
 | `npx expo-doctor` (dans `apps/mobile`) | 20/20 attendu |
 
 ---
@@ -148,9 +149,9 @@ Ajouter un écran : créer le fichier, puis (si besoin d'un titre fixe) l'option
 
 ## 4. Navigation et shell
 
-- **Tab bar** (`components/AppTabBar.tsx`) : 5 onglets, libellés toujours visibles, badges `me.badges` (Activité/Interventions = `activity`, Messages = `messages`). Masquée sur le chat (`HIDE_ON`) ; ajoutez-y vos écrans plein clavier.
+- **Tab bar** : système sur iOS/Android, JS sur web (voir §10). `(tabs)/_layout.tsx` → `components/SpaceNativeTabs.tsx` (`NativeTabs` d'`expo-router/native-tabs` : SF Symbols / Material Symbols, Liquid Glass automatique sur iOS 26) ; `(tabs)/_layout.web.tsx` → `components/AppTabBar.tsx`. 5 onglets, libellés toujours visibles, badges `me.badges` (Activité/Interventions = `activity`, Messages = `messages`) avec libellé accessible « N non lus ». Masquée sur le chat (`lib/tabBar.ts#isTabBarHiddenOn`) ; ajoutez-y vos écrans plein clavier. Nouvel onglet : l'ajouter dans **les deux** fichiers de layout.
 - **Cloche** dans l'en-tête de chaque racine d'onglet (`HeaderBell`, badge `notifications`).
-- **Intervention épinglée** (`PinnedInterventionHost`) au-dessus de la tab bar dans tous les onglets : `useActiveBooking(as)` + `useBookingLive` (statut et ETA en direct). Destination : `interventionHref(booking, as)` — urgence `searching` → recherche, `accepted/en_route` → suivi, sinon détail.
+- **Intervention épinglée** (`usePinnedIntervention`) au-dessus de la tab bar dans tous les onglets : `useActiveBooking(as)` + `useBookingLive` (statut et ETA en direct). Affichage selon la plateforme : §10. Destination : `interventionHref(booking, as)` — urgence `searching` → recherche, `accepted/en_route` → suivi, sinon détail.
 - **Changement de rôle** : `const switchRole = useSwitchRole(); switchRole('artisan')` → voile plein écran à la couleur de l'espace cible (`AccentTransition`), `me.setActiveRole`, `router.replace`. Sans profil artisan → `/pro/onboarding`.
 - **Accent** : le thème suit `useAppStore().activeRole` (client = brun sable `#8A6A4A`, artisan = ardoise `#3B4A5A`). Pour un aperçu « vu client » dans l'espace artisan : `<AccentScope accent="client">`.
 - **Liens profonds** : `DEEP_LINKS` (schemas) → `lib/deepLinks.ts#resolveDeepLink(link, role)` (utilisé par `+native-intent` et le tap sur notification). Ajoutez-y tout nouveau type de lien (+ test dans `deepLinks.test.ts`).
@@ -278,9 +279,10 @@ Tout passe par `useTheme()` : `t.colors.*` (sémantique, clair/sombre, accent), 
 | `EmptyState`, `ErrorState`, `Skeleton*` | états systématiques |
 | `ToastProvider` / `useToast()` | `toast.success('…')`, `toast.error(errorMessage(e))`, action optionnelle |
 | `OfflineBanner` | déjà monté globalement |
-| `Screen` | safe area + clavier + scroll + `footer` collant (`inTabs` dans un onglet) |
+| `Screen` | safe area + clavier + scroll + `footer` collant (`inTabs` dans un onglet : obligatoire, gère l'inset de la tab bar native iOS ; `footerGlass={false}` pour un footer opaque) |
 | `StickyFooter` | CTA dans la zone du pouce |
-| `PinnedInterventionBar` | déjà monté dans la tab bar |
+| `PinnedInterventionBar` | déjà monté (tab bar web, accessoire iOS 26, bas des piles d'onglets) ; `surface` solid/glass/none, `compact` |
+| `Glass`, `GlassGroup`, `useLiquidGlass()` | Liquid Glass iOS 26 avec repli opaque (voir §10) |
 | `AccentTransition`, `AccentScope` | transition de rôle / aperçu d'accent |
 | `haptic(kind)`, `useReduceMotion`, `timing()` | retour haptique, réduction des animations, durées 200–300 ms |
 | `formatEuros` (schemas), `formatDateTime`, `relativeDayLabel`, `formatDistance`… | formatages FR (Europe/Paris) |
@@ -332,3 +334,46 @@ Microcopy (ton rassurant, vouvoiement, phrases courtes) :
 - Pas de désenregistrement du jeton push à la déconnexion.
 - Format de l'erreur d'authentification Socket.IO (l'app détecte `unauthorized|jwt|token|401`).
 - Passkeys : endpoints présents, UI désactivée (`features.passkeys`), module natif à choisir.
+
+## 10. Liquid Glass (iOS 26) et tab bar native
+
+### Où
+| Élément | Fichier | iOS 26 | iOS ≤ 18 · Android | Web |
+| --- | --- | --- | --- | --- |
+| Tab bar (2 espaces) | `app/(client)/(tabs)/_layout.tsx`, `app/pro/(tabs)/_layout.tsx` → `components/SpaceNativeTabs.tsx` | `NativeTabs` système : Liquid Glass, `minimizeBehavior="onScrollDown"`, teinte = accent (`DynamicColorIOS`) | UITabBar opaque · Material 3 (couleurs du thème) | `_layout.web.tsx` : `AppTabBar` JS inchangée |
+| Intervention épinglée | `SpaceNativeTabs` (accessoire), `components/TabStack.tsx` (bas de pile) | `NativeTabs.BottomAccessory` (verre système, version « inline » compacte quand la barre se réduit) | Capsule en bas de chaque pile d'onglet, juste au-dessus de la tab bar | dans `AppTabBar` |
+| CTA du pouce | `StickyFooter` / `Screen footer` | « dock » de verre teinté | barre opaque + filet | barre opaque |
+| Cartes | `LiveMap.native.tsx` (recherche, suivi urgence 6), `ZoneMap.tsx` (artisan) | bouton « Recentrer », capsule ETA (`overlayLabel`), capsule rayon | mêmes contrôles, surface opaque | schéma web inchangé |
+| Demande d'urgence (artisan) | `OfferScreen` | zone compte à rebours en verre | carte opaque | carte opaque |
+
+Non concernés, volontairement : **boutons rouges d'urgence** (toujours pleins), `BottomSheet` (choix et textes longs : surface pleine), contenu des écrans.
+
+### Primitive `Glass` (`@depano/ui`)
+- `<Glass legible radius interactive variant fallback elevation>` rend `GlassView` (expo-glass-effect) **seulement si** `Platform.OS === 'ios'`, `isLiquidGlassAvailable()`, `isGlassEffectAPIAvailable()` et « Réduire la transparence » désactivé (`AccessibilityInfo` + écouteur `reduceTransparencyChanged`, un seul pour toute l'app). Sinon : surface opaque du thème + élévation + filet. Tant que le réglage n'est pas lu : opaque.
+- `useLiquidGlass()` → `{ enabled, available, reduceTransparency }` ; `GlassGroup` = `GlassContainer` (fusion des verres proches) ou `View`.
+- Import sûr sur web et Android (le module renvoie `false` / une `View`). Logique pure testée : `packages/ui/src/glass/support.test.ts`.
+- `colorScheme` du verre = thème de l'app ; l'app aligne aussi le style natif iOS (`Appearance.setColorScheme`, `AppProviders`) pour que tab bar, accessoire et `PlatformColor` suivent le thème choisi.
+
+### Règles (accessibilité)
+- Sur le verre : **libellés courts et icônes uniquement**, avec `legible` (vitre teintée par la surface). Texte important (prix, mentions, statut détaillé) sur surface pleine. L'accessoire natif utilise `PlatformColor('label' | 'secondaryLabel')` : lisible quel que soit le contenu dessous.
+- Jamais la couleur seule : statut = icône + libellé ; badges annoncés « N non lus ».
+- Ne jamais animer l'opacité d'un `Glass` ou de ses parents (recommandation Apple) : glissement seul, `ReduceMotion.System`.
+- Reduce Transparency → surfaces opaques automatiquement ; Reduce Motion respecté (carte recentrée sans animation).
+
+### Décisions
+- **Pas de `role="search"`** sur Recherche : ce rôle remplace l'icône et le libellé par l'élément système (libellé localisé par iOS, potentiellement « Search »), déplace l'onglet à droite et attend une barre de recherche native ; l'écran a déjà son champ, ses filtres et la bascule liste/carte.
+- **Intervention épinglée** : la hauteur de la tab bar native n'est pas mesurable. iOS 26 → accessoire natif (`NativeTabs.BottomAccessory`, disponible dans Expo Router 58). Ailleurs → pas de position absolue ni de constante magique : la barre occupe le bas de la pile de l'onglet (Android : le contenu finit déjà au-dessus de la tab bar ; iOS : le `SafeAreaProvider` propre à chaque onglet donne la hauteur de la tab bar dans `insets.bottom`). L'arbre reste stable : la pile n'est jamais remontée.
+- **Insets** : sur iOS la tab bar native flotte au-dessus du contenu. `Screen inTabs` met `contentInsetAdjustmentBehavior="automatic"`, `StickyFooter aboveTabBar` applique `insets.bottom` (iOS uniquement), les `FlatList` d'onglets (Messages, Activité, Recherche) aussi. `FlatList` ne réduit pas la tab bar au défilement (limite documentée) ; `disableTransparentOnScrollEdge` évite une barre transparente sur iOS ≤ 18.
+- `ThemeProvider` d'Expo Router aux couleurs du thème autour des tabs : pas de flash blanc au changement d'onglet sur iOS 26.
+- `app.json` ne contient pas `UIDesignRequiresCompatibility` (ne jamais l'ajouter à `true` : cela désactive Liquid Glass).
+
+### Voir le rendu (iPhone sous iOS 26)
+Expo Go n'affiche pas l'accessoire ni le build Xcode 26 du projet : il faut un **development build** (`eas.json`, profil `development`, image `sdk-58` = macOS Tahoe + Xcode 27.1, ≥ Xcode 26 requis). `extra.eas.projectId` est vide : la première commande `build` propose de lier le projet (`eas init`).
+
+```bash
+cd apps/mobile
+npx eas-cli@latest login
+npx eas-cli@latest build --profile development --platform ios   # enregistre l'iPhone (ad hoc) puis installe via QR code
+npx expo start --dev-client
+```
+À vérifier sur l'appareil : verre de la tab bar et réduction au défilement, accessoire (régulier / inline), contraste sur fond clair et sombre, Réglages › Accessibilité › Affichage › Réduire la transparence (tout devient opaque), Taille du texte maximale.

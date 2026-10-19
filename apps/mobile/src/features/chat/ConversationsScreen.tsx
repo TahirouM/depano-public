@@ -42,6 +42,8 @@ export function ConversationsScreen({ as }: { as: 'client' | 'artisan' }) {
             <FlatList
               data={[...data].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))}
               keyExtractor={(c) => c.id}
+              // Tabs natives iOS : la tab bar flotte au-dessus de la liste ; UIKit ajoute l'inset bas.
+              contentInsetAdjustmentBehavior="automatic"
               ItemSeparatorComponent={() => <Divider inset={80} />}
               refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => void q.refetch()} tintColor={t.colors.brand.primary} />}
               renderItem={({ item: c }) => {

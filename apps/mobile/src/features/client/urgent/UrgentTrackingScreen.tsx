@@ -126,6 +126,7 @@ export function UrgentTrackingScreen({ bookingId }: { bookingId: string }) {
           destination={dest}
           artisan={b.artisanLocation}
           artisanName={b.artisan?.displayName}
+          overlayLabel={b.status === 'en_route' && eta != null ? (eta <= 1 ? 'Arrive' : `${eta} min`) : null}
           accessibilityLabel={b.artisanLocation ? `Carte : ${headline}` : "Carte de l'adresse d'intervention"}
         />
         <View style={{ gap: t.spacing.xs }} accessibilityLiveRegion="polite">

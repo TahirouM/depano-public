@@ -21,6 +21,8 @@ export interface ScreenProps {
   contentStyle?: StyleProp<ViewStyle>;
   /** Décalage clavier (hauteur d'en-tête) pour KeyboardAvoidingView. */
   keyboardOffset?: number;
+  /** false : footer toujours opaque (jamais de Liquid Glass). */
+  footerGlass?: boolean;
   testID?: string;
 }
 
@@ -37,6 +39,7 @@ export function Screen({
   onRefresh,
   contentStyle,
   keyboardOffset = 0,
+  footerGlass = true,
   testID,
 }: ScreenProps) {
   const t = useTheme();
@@ -47,6 +50,8 @@ export function Screen({
     <ScrollView
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
+      // Tabs natives iOS : la tab bar (Liquid Glass) flotte au-dessus du contenu ; UIKit ajoute l'inset bas.
+      contentInsetAdjustmentBehavior={inTabs && !footer && Platform.OS === 'ios' ? 'automatic' : undefined}
       contentContainerStyle={[styles.grow, pad, { paddingBottom: t.spacing.xxl }, contentStyle]}
       refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={t.colors.brand.primary} /> : undefined}
     >
@@ -59,7 +64,7 @@ export function Screen({
     <SafeAreaView testID={testID} edges={resolvedEdges} style={[styles.flex, { backgroundColor: bg }]}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={keyboardOffset}>
         {body}
-        {footer ? <StickyFooter aboveTabBar={inTabs}>{footer}</StickyFooter> : null}
+        {footer ? <StickyFooter aboveTabBar={inTabs} glass={footerGlass}>{footer}</StickyFooter> : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

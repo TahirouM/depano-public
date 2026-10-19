@@ -16,3 +16,5 @@ next-env.d.ts
 .terraform
 *.tfstate*
 .terraform.lock.hcl
+.demo
+apps/mobile/dist-demo

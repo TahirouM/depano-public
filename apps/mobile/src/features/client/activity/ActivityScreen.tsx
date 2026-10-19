@@ -76,6 +76,8 @@ function ActivityInner() {
           <FlatList
             data={data.pages.flatMap((p) => p.items)}
             keyExtractor={(b) => b.id}
+            // Tabs natives iOS : la tab bar flotte au-dessus de la liste ; UIKit ajoute l'inset bas.
+            contentInsetAdjustmentBehavior="automatic"
             contentContainerStyle={{ padding: t.spacing.lg, gap: t.spacing.md, paddingBottom: t.spacing.xxxl }}
             refreshing={q.isRefetching && !q.isFetchingNextPage}
             onRefresh={() => void q.refetch()}

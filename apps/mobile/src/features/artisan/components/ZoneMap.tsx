@@ -1,4 +1,4 @@
-import { useTheme } from '@depano/ui';
+import { Glass, Text, useTheme } from '@depano/ui';
 import { View } from 'react-native';
 import MapView, { Circle, Marker } from 'react-native-maps';
 
@@ -42,6 +42,14 @@ export function ZoneMap({ lat, lng, radiusKm, height = 220 }: ZoneMapProps) {
           fillColor={`${t.colors.brand.primary}22`}
         />
       </MapView>
+      {/* Rayon en capsule Liquid Glass (iOS 26 ; opaque ailleurs) — déjà lu dans le libellé de la carte. */}
+      <View style={{ position: 'absolute', top: t.spacing.sm, left: t.spacing.sm }} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <Glass legible style={{ minHeight: 32, paddingHorizontal: t.spacing.md, justifyContent: 'center' }}>
+          <Text variant="label" numberOfLines={1} maxFontSizeMultiplier={1.5}>
+            Rayon {radiusKm} km
+          </Text>
+        </Glass>
+      </View>
     </View>
   );
 }

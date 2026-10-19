@@ -2,19 +2,18 @@ import { Badge, MAX_FONT_SCALE, MIN_TOUCH, Text, useTheme, haptic } from '@depan
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { useSegments } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { isTabBarHiddenOn, tabAccessibilityLabel } from '@/lib/tabBar';
 import { PinnedInterventionHost } from './PinnedInterventionHost';
 
-/** Écrans où la tab bar est masquée (ex. chat : le clavier a besoin de place). */
-const HIDE_ON: ((segments: string[]) => boolean)[] = [(s) => s.includes('messages') && s[s.length - 1] === '[id]'];
 
 /**
- * Tab bar DEPANO : 5 onglets max, libellés toujours visibles, badges chiffrés,
+ * Tab bar DEPANO (web ; natif : tab bar système, voir SpaceNativeTabs) : 5 onglets max, libellés toujours visibles, badges chiffrés,
  * intervention en cours épinglée au-dessus (comme un mini-lecteur audio).
  */
 export function AppTabBar({ state, descriptors, emitter, navigateToTab, insets, as }: BottomTabBarProps & { as: 'client' | 'artisan' }) {
   const t = useTheme();
   const segments = useSegments() as string[];
-  if (HIDE_ON.some((f) => f(segments))) return null;
+  if (isTabBarHiddenOn(segments)) return null;
 
   return (
     <View style={{ backgroundColor: t.colors.background.canvas }}>
@@ -48,7 +47,7 @@ export function AppTabBar({ state, descriptors, emitter, navigateToTab, insets, 
               key={route.key}
               accessibilityRole="tab"
               accessibilityState={{ selected: focused }}
-              accessibilityLabel={badge ? `${label}, ${badge} non lu${badge > 1 ? 's' : ''}` : label}
+              accessibilityLabel={tabAccessibilityLabel(label, badge ?? 0)}
               testID={options.tabBarButtonTestID}
               onPress={onPress}
               onLongPress={() => emitter.emit({ type: 'tabLongPress', target: route.key })}

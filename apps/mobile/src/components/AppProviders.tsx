@@ -6,8 +6,8 @@ import { INTER_FAMILIES, OfflineBanner, ThemeProvider, ToastProvider, useTheme }
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
-import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, type ReactNode } from 'react';
+import { Appearance, Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaInsetsContext, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsOnline, usePausedMutationCount } from '@/lib/online';
@@ -48,6 +48,12 @@ function OfflineLayout({ children }: { children: ReactNode }) {
 function ThemedApp({ children, inter }: { children: ReactNode; inter: boolean }) {
   const scheme = useAppStore((s) => s.scheme);
   const role = useAppStore((s) => s.activeRole);
+  // iOS : aligne le style d'interface natif sur le thème choisi dans l'app. Indispensable au
+  // Liquid Glass (tab bar, accessoire, en-têtes) : DynamicColorIOS / PlatformColor et le verre
+  // se résolvent sur ce style, pas sur notre thème JS.
+  useEffect(() => {
+    if (Platform.OS === 'ios') Appearance.setColorScheme(scheme === 'system' ? 'unspecified' : scheme);
+  }, [scheme]);
   return (
     <ThemeProvider scheme={scheme} accent={role} fonts={inter ? INTER_FAMILIES : null}>
       <ThemedStatusBar />

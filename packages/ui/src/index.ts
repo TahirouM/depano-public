@@ -4,6 +4,8 @@ export { ThemeProvider, useTheme, createTheme, AccentScope, type Theme, type The
 export { haptic, type HapticKind } from './utils/haptics';
 export { timing, animateTo, useReduceMotion } from './utils/motion';
 export * from './utils/format';
+export { useLiquidGlass, isLiquidGlassSupported, type LiquidGlassState } from './glass/useLiquidGlass';
+export { canUseLiquidGlass, hexWithAlpha, type GlassEnvironment } from './glass/support';
 
 export { Text, type TextProps, type TextTone } from './components/Text';
 export { Icon, type IconProps, type LucideIcon } from './components/Icon';
@@ -37,6 +39,7 @@ export { Skeleton, SkeletonText, SkeletonCard, SkeletonList, type SkeletonProps 
 export { ToastProvider, useToast, type ToastOptions, type ToastType } from './components/Toast';
 export { OfflineBanner, type OfflineBannerProps } from './components/OfflineBanner';
 export { Screen, type ScreenProps } from './components/Screen';
+export { Glass, GlassGroup, type GlassProps, type GlassGroupProps } from './components/Glass';
 export { StickyFooter, type StickyFooterProps } from './components/StickyFooter';
 export { PinnedInterventionBar, type PinnedInterventionBarProps } from './components/PinnedInterventionBar';
 export { BottomSheet, type BottomSheetProps } from './components/BottomSheet';

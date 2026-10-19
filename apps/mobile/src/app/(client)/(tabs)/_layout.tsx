@@ -1,24 +1,32 @@
-import { Tabs } from 'expo-router/js-tabs';
-import { ClipboardList, House, MessageCircle, Search, User } from 'lucide-react-native';
-import { AppTabBar } from '@/components/AppTabBar';
-import { useBadges } from '@/lib/query/hooks';
+import { SpaceNativeTabs, type NativeTabDef } from '@/components/SpaceNativeTabs';
 
-/** Onglets client : Accueil, Recherche, Activité, Messages, Profil. */
+/**
+ * Onglets client (iOS / Android) : tab bar système — Liquid Glass sur iOS 26, Material sur Android.
+ * Web : `_layout.web.tsx` (tab bar JS). Chaque onglet garde sa pile (`TabStack`).
+ */
+const TABS: NativeTabDef[] = [
+  { name: 'accueil', label: 'Accueil', sf: { default: 'house', selected: 'house.fill' }, md: 'home', testID: 'tab-accueil' },
+  // Pas de role="search" : voir README (Liquid Glass) — l'écran a sa propre recherche + filtres.
+  { name: 'recherche', label: 'Recherche', sf: { default: 'magnifyingglass', selected: 'magnifyingglass' }, md: 'search', testID: 'tab-recherche' },
+  {
+    name: 'activite',
+    label: 'Activité',
+    sf: { default: 'list.bullet.rectangle', selected: 'list.bullet.rectangle.fill' },
+    md: 'list_alt',
+    testID: 'tab-activite',
+    badge: 'activity',
+  },
+  {
+    name: 'messages',
+    label: 'Messages',
+    sf: { default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' },
+    md: 'forum',
+    testID: 'tab-messages',
+    badge: 'messages',
+  },
+  { name: 'profil', label: 'Profil', sf: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' }, md: 'account_circle', testID: 'tab-profil' },
+];
+
 export default function ClientTabsLayout() {
-  const badges = useBadges();
-  return (
-    <Tabs tabBar={(props) => <AppTabBar {...props} as="client" />} screenOptions={{ headerShown: false }}>
-      <Tabs.Screen name="accueil" options={{ title: 'Accueil', tabBarIcon: ({ color }) => <House color={color} size={24} />, tabBarButtonTestID: 'tab-accueil' }} />
-      <Tabs.Screen name="recherche" options={{ title: 'Recherche', tabBarIcon: ({ color }) => <Search color={color} size={24} />, tabBarButtonTestID: 'tab-recherche' }} />
-      <Tabs.Screen
-        name="activite"
-        options={{ title: 'Activité', tabBarIcon: ({ color }) => <ClipboardList color={color} size={24} />, tabBarBadge: badges.data?.activity || undefined, tabBarButtonTestID: 'tab-activite' }}
-      />
-      <Tabs.Screen
-        name="messages"
-        options={{ title: 'Messages', tabBarIcon: ({ color }) => <MessageCircle color={color} size={24} />, tabBarBadge: badges.data?.messages || undefined, tabBarButtonTestID: 'tab-messages' }}
-      />
-      <Tabs.Screen name="profil" options={{ title: 'Profil', tabBarIcon: ({ color }) => <User color={color} size={24} />, tabBarButtonTestID: 'tab-profil' }} />
-    </Tabs>
-  );
+  return <SpaceNativeTabs as="client" tabs={TABS} />;
 }

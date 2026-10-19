@@ -6,6 +6,7 @@ import {
   EmptyState,
   ErrorState,
   formatDistance,
+  Glass,
   haptic,
   Screen,
   Skeleton,
@@ -227,12 +228,19 @@ export function OfferScreen({ offerId }: { offerId: string }) {
     >
       {header}
       <View style={{ gap: t.spacing.lg }}>
-        <View style={{ alignItems: 'center', gap: t.spacing.sm }}>
+        {/* Zone compte à rebours : Liquid Glass sur iOS 26 (posé sur la surface unie : contraste stable). */}
+        <Glass
+          legible
+          radius={t.radius.lg}
+          elevation={1}
+          fallback="canvas"
+          style={{ alignItems: 'center', gap: t.spacing.sm, paddingVertical: t.spacing.lg, paddingHorizontal: t.spacing.md }}
+        >
           <CountdownRing remaining={left} total={RULES.dispatch.offerTimeoutSeconds} />
           <Text variant="callout" tone="secondary" align="center">
             Le premier artisan qui accepte obtient l'intervention.
           </Text>
-        </View>
+        </Glass>
 
         <View style={{ gap: t.spacing.sm }}>
           <DomainChip domain={offer.domain} />
