@@ -5,6 +5,7 @@ import { api } from '../api';
 import { uploadFile } from '../upload';
 import { upsertMessageInCache } from './cache';
 import { mk, qk } from './keys';
+import { registerArtisanMutationDefaults } from '@/features/artisan/mutations';
 
 export type SendMessageVars = Omit<OutboxMessage, 'status'>;
 
@@ -16,6 +17,8 @@ export type SendMessageVars = Omit<OutboxMessage, 'status'>;
  * Usage : `useMutation<MessageDto, Error, SendMessageVars>({ mutationKey: mk.chatSend })`.
  */
 export function registerMutationDefaults(qc: QueryClient) {
+  // Espace artisan : changements de statut et compte rendu rejouables hors ligne.
+  registerArtisanMutationDefaults(qc);
   qc.setMutationDefaults(mk.chatSend, {
     mutationFn: async (v: SendMessageVars): Promise<MessageDto> => {
       let fileId = v.fileId;

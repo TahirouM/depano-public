@@ -1,13 +1,5 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { FavoritesScreen } from '@/features/client/profile/FavoritesScreen';
 
-/** Favoris — à implémenter par l'agent client (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="client"
-      title="Favoris"
-      description="Artisans favoris (me.favorites) en ArtisanCard."
-      states="vide" inTabs
-    />
-  );
+  return <FavoritesScreen />;
 }

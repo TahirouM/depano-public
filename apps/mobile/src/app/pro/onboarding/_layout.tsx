@@ -13,7 +13,13 @@ export default function Layout() {
         name="index"
         options={{
           headerLeft: () => (
-            <Button label="Espace client" variant="ghost" size="sm" onPress={() => void switchRole('client')} accessibilityHint="Quitter l'inscription artisan et revenir à l'espace client" />
+            <Button
+              label="Espace client"
+              variant="ghost"
+              size="sm"
+              onPress={() => void switchRole('client')}
+              accessibilityHint="Quitter l'inscription artisan et revenir à l'espace client"
+            />
           ),
         }}
       />

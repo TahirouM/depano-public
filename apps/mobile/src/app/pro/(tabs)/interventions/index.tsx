@@ -1,14 +1,6 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { InterventionsScreen } from '@/features/artisan/interventions/InterventionsScreen';
 
-/** Interventions — à implémenter par l'agent artisan (plan, section 5). */
+/** Interventions : liste du jour par statut, navigation semaine. */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="artisan"
-      title="Interventions"
-      description="Liste du jour par statut, navigation semaine (bookings.list as=artisan)."
-      states="vide" inTabs
-      links={[{ label: "Détail intervention (démo)", href: "/pro/interventions/demo" }]}
-    />
-  );
+  return <InterventionsScreen />;
 }

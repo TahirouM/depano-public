@@ -1,13 +1,7 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { useLocalSearchParams } from 'expo-router';
+import { EndScreen } from '@/features/client/activity/EndScreen';
 
-/** Fin d'intervention — à implémenter par l'agent client (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="client"
-      title="Fin d'intervention"
-      description="Code 4 chiffres à donner à l'artisan, « Que s'est-il passé ? » (litige : jamais venu, déplacement seulement…)."
-      states="—" inTabs
-    />
-  );
+  const { id } = useLocalSearchParams<{ id: string }>();
+  return <EndScreen id={id} />;
 }

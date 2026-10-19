@@ -1,13 +1,7 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { useLocalSearchParams } from 'expo-router';
+import { ReportScreen } from '@/features/artisan/interventions/ReportScreen';
 
-/** Compte rendu — à implémenter par l'agent artisan (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="artisan"
-      title="Compte rendu"
-      description="Réalisable oui/non, matériel, photos avant/après, note vocale transcrite, retour nécessaire (bookings.submitReport). Brouillon persisté."
-      states="brouillon" inTabs
-    />
-  );
+  const { id, deplacement } = useLocalSearchParams<{ id: string; deplacement?: string }>();
+  return <ReportScreen id={id} travelOnly={deplacement === '1'} />;
 }

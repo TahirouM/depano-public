@@ -1,13 +1,8 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { useLocalSearchParams } from 'expo-router';
+import { OfferScreen } from '@/features/artisan/offer/OfferScreen';
 
-/** Demande d'urgence — à implémenter par l'agent artisan (plan, section 5). */
+/** Demande d'urgence plein écran (ouverte automatiquement sur offer.created). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="artisan"
-      title="Demande d'urgence"
-      description="Plein écran : motif, distance, prix, compte à rebours 60 s, accepter / refuser (artisan.acceptOffer / declineOffer). Ouvert automatiquement sur offer.created."
-      states="prise par un autre (offer.revoked)"
-    />
-  );
+  const { id } = useLocalSearchParams<{ id: string }>();
+  return <OfferScreen offerId={id} />;
 }

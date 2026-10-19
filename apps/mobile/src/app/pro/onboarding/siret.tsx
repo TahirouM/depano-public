@@ -1,13 +1,5 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { SiretStep } from '@/features/artisan/onboarding/SiretStep';
 
-/** SIRET — à implémenter par l'agent artisan (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="artisan"
-      title="SIRET"
-      description="Saisie du SIRET : nom, adresse et activité pré-remplis (artisan.lookupSiret)."
-      states="SIRET inactif, APE incohérent"
-    />
-  );
+  return <SiretStep />;
 }

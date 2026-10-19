@@ -113,11 +113,18 @@ Statut : ✅ implémenté (fondations) · 🧱 placeholder « À venir » à imp
 | Adresses / Paiement / Factures / Favoris / Parrainage / Aide | `(client)/(tabs)/profil/{adresses,paiement,factures,favoris,parrainage,aide}.tsx` | `/profil/…` |
 | Compte | ✅ commun : `parametres/compte.tsx` | `/parametres/compte` |
 
+**Espace client : implémenté** (`src/features/client/`). Repères :
+- `queries.ts` (catalogue, carnet d'adresses, favoris optimistes, cartes, factures, autocomplétion `useAddressSearch`), `drafts.ts` (brouillons étendus : médias locaux téléversés au paiement, `prefillUrgentDraft` / `prefillScheduledDraft` pour relancer).
+- `payment/` : `usePaymentSheet` (fake = validation simulée ; Stripe PaymentSheet en natif, chargé à la demande, clé `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`) et `useCheckout` (création → feuille de paiement → `confirmPayment`, réservation réutilisée au nouvel essai).
+- `map/LiveMap` (`react-native-maps` en natif, schéma de distance sur web), `calendar/addToCalendar` (formulaire système `expo-calendar` en natif, fichier `.ics` sur web).
+- `navigation.ts#useLeaveFlow` : quitter un parcours (urgence, RDV) vers les onglets sans créer un second navigateur d'onglets (ne pas utiliser `router.replace('/activite/…')` depuis une pile de parcours).
+- Sur web, `Linking.openURL('tel:…')` fige les gestes : l'appel relais affiche le numéro (`ArtisanContact`).
+
 ### Espace artisan — **agent artisan**
 
 | Écran (section 5) | Fichier | URL |
 | --- | --- | --- |
-| Onboarding pro (KYC) | `pro/onboarding/{index,siret,metiers,zone,documents,verification}.tsx` | `/pro/onboarding/…` |
+| Onboarding pro (KYC) | `pro/onboarding/{index,siret,metiers,zone,documents,iban,verification}.tsx` | `/pro/onboarding/…` |
 | Accueil | `pro/(tabs)/accueil/index.tsx` | `/pro/accueil` |
 | Demande d'urgence | `pro/offre/[id].tsx` (ouverte auto sur `offer.created`) | `/pro/offre/{id}` (cible de `depano://offre/{id}`) |
 | Planning (+ indispo) | `pro/(tabs)/planning/index.tsx`, `planning/indisponibilite.tsx` | `/pro/planning` |
@@ -128,6 +135,12 @@ Statut : ✅ implémenté (fondations) · 🧱 placeholder « À venir » à imp
 | Saisie du code de fin | `pro/(tabs)/interventions/[id]/code.tsx` | `/pro/interventions/{id}/code` |
 | Profil public | `pro/(tabs)/profil/apercu.tsx` | `/pro/profil/apercu` |
 | Disponibilités / Tarifs / Revenus / Statistiques / Activité / Aide | `pro/(tabs)/profil/{disponibilites,tarifs,revenus,statistiques,activite,aide}.tsx` | `/pro/profil/…` |
+
+**Espace artisan : implémenté** (`src/features/artisan/`). Repères :
+- `queries.ts` (hooks `qk.artisan.*`), `mutations.ts` (clés `artisanMk.transition` / `artisanMk.report`, enregistrées dans `registerMutationDefaults` : statut et compte rendu rejouables hors ligne, photos téléversées au rejeu si besoin).
+- `tracking.ts` : `EnRouteTracker` (monté dans `pro/_layout.tsx`) partage la position toutes les 10 s tant qu'une intervention est `en_route` (Socket.IO `location.update`, repli REST).
+- `format.ts` : helpers purs testés (`format.test.ts`) ; `components/` : anneau 60 s, photos, note vocale (expo-audio, masquée sur web), carte de zone (`react-native-maps`, schéma SVG sur web), horaires types, prestations/tarifs, justificatifs (expo-document-picker).
+- Export comptable : `shareCsv` (expo-file-system + expo-sharing ; téléchargement direct sur web).
 
 Ajouter un écran : créer le fichier, puis (si besoin d'un titre fixe) l'option `<Stack.Screen options={{ title }} />` dans l'écran lui-même. Les piles d'onglets sont dans `.../(tabs)/<onglet>/_layout.tsx` (`TabStack`), les parcours plein écran utilisent `FlowStack`.
 

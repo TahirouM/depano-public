@@ -1,13 +1,5 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { ZoneStep } from '@/features/artisan/onboarding/ZoneStep';
 
-/** Zone d'intervention — à implémenter par l'agent artisan (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="artisan"
-      title="Zone d'intervention"
-      description="Rayon sur carte et horaires types (artisan.updateProfile, setAvailabilityRules)."
-      states="—"
-    />
-  );
+  return <ZoneStep />;
 }

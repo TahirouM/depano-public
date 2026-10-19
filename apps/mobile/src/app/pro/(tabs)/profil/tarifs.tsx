@@ -1,13 +1,5 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { PricingScreen } from '@/features/artisan/account/PricingScreen';
 
-/** Tarifs — à implémenter par l'agent artisan (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="artisan"
-      title="Tarifs"
-      description="Prix par prestation, frais de déplacement (artisan.setServices)."
-      states="—" inTabs
-    />
-  );
+  return <PricingScreen />;
 }

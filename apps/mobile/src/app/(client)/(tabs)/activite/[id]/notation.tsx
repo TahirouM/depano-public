@@ -1,13 +1,7 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { useLocalSearchParams } from 'expo-router';
+import { ReviewScreen } from '@/features/client/activity/ReviewScreen';
 
-/** Notation — à implémenter par l'agent client (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="client"
-      title="Notation"
-      description="Étoiles (StarRating input), tags, commentaire, photo (bookings.review)."
-      states="déjà noté" inTabs
-    />
-  );
+  const { id } = useLocalSearchParams<{ id: string }>();
+  return <ReviewScreen id={id} />;
 }

@@ -1,13 +1,5 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { StatsScreen } from '@/features/artisan/account/StatsScreen';
 
-/** Statistiques — à implémenter par l'agent artisan (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="artisan"
-      title="Statistiques"
-      description="CA par mois, taux d'acceptation, note moyenne (artisan.stats)."
-      states="—" inTabs
-    />
-  );
+  return <StatsScreen />;
 }

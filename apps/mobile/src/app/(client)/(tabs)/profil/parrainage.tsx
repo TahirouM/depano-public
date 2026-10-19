@@ -1,13 +1,5 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { ReferralScreen } from '@/features/client/profile/ReferralScreen';
 
-/** Parrainage — à implémenter par l'agent client (plan, section 5). */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="client"
-      title="Parrainage"
-      description="Code de parrainage, partage (repris du Figma)."
-      states="—" inTabs
-    />
-  );
+  return <ReferralScreen />;
 }

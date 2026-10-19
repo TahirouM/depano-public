@@ -97,7 +97,20 @@
           "color": "#8A6A4A"
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.fr.depano.app",
+          "enableGooglePay": true
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "DEPANO ajoute vos rendez-vous à votre calendrier si vous le demandez."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

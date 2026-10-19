@@ -1,14 +1,6 @@
-import { PlaceholderScreen } from '@/components/PlaceholderScreen';
+import { PlanningScreen } from '@/features/artisan/planning/PlanningScreen';
 
-/** Planning — à implémenter par l'agent artisan (plan, section 5). */
+/** Planning : mois + jour, légende, indisponibilités. */
 export default function Screen() {
-  return (
-    <PlaceholderScreen
-      owner="artisan"
-      title="Planning"
-      description="Mois + jour, légende par type (couleurs domaine), ajout d'indispo perso (artisan.planning)."
-      states="vide" inTabs
-      links={[{ label: "Ajouter une indisponibilité", href: "/pro/planning/indisponibilite" }]}
-    />
-  );
+  return <PlanningScreen />;
 }
