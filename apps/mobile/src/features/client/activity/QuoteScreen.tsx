@@ -51,12 +51,21 @@ function QuoteInner({ id }: { id: string }) {
     setBusy(accept ? 'accept' : 'refuse');
     try {
       const res = await api.bookings.answerQuote(id, { accept });
+      let booking = res.booking;
       if (res.payment) {
-        // Dépassement de plus de 20 % : autorisation complémentaire à valider.
+        // Dépassement de plus de 20 % : autorisation complémentaire à valider, puis confirmée côté serveur
+        // (statut vérifié auprès du prestataire, montant autorisé mis à jour).
         const r = await sheet.present(sessionToSheet(res.payment));
-        if (r.status !== 'succeeded') toast.error(r.status === 'failed' ? r.message : 'Autorisation complémentaire non validée : l’artisan ne peut pas commencer.');
+        if (r.status === 'succeeded') {
+          booking = await api.bookings.confirmPayment(id).catch((e: unknown) => {
+            toast.error(errorMessage(e, 'Autorisation complémentaire en cours de vérification.'));
+            return booking;
+          });
+        } else {
+          toast.error(r.status === 'failed' ? r.message : 'Autorisation complémentaire non validée : l’artisan ne peut pas commencer.');
+        }
       }
-      qc.setQueryData(qk.bookings.detail(id), res.booking);
+      qc.setQueryData(qk.bookings.detail(id), booking);
       void qc.invalidateQueries({ queryKey: qk.bookings.lists });
       void qc.invalidateQueries({ queryKey: qk.badges });
       if (accept) toast.success("Devis validé. L'artisan peut commencer.");

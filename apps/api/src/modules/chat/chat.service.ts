@@ -65,6 +65,7 @@ export class ChatService {
         kind: m.kind,
         body: m.body,
         fileUrl: m.fileId ? (urls.get(m.fileId) ?? null) : null,
+        durationMs: m.kind === 'voice' ? (m.durationMs ?? null) : null,
         clientId: m.clientId,
         createdAt: m.createdAt.toISOString(),
         readAt: ref && ref >= m.createdAt ? ref.toISOString() : null,
@@ -172,7 +173,7 @@ export class ChatService {
     if (body.fileId) await this.filesService.assertOwned(userId, [body.fileId], ['chat', 'problem_photo', 'problem_voice']);
     const inserted = await this.conn.db
       .insert(messages)
-      .values({ conversationId: c.id, senderId: userId, kind: body.kind, body: body.body?.trim() || null, fileId: body.fileId ?? null, clientId: body.clientId })
+      .values({ conversationId: c.id, senderId: userId, kind: body.kind, body: body.body?.trim() || null, fileId: body.fileId ?? null, durationMs: body.kind === 'voice' ? (body.durationMs ?? null) : null, clientId: body.clientId })
       .onConflictDoNothing({ target: [messages.conversationId, messages.clientId] })
       .returning();
     const isNew = inserted.length > 0;

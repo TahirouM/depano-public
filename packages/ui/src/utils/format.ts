@@ -66,3 +66,10 @@ export function formatDistance(km: number | null | undefined): string | null {
 export function formatRating(r: number | null | undefined): string | null {
   return r == null ? null : r.toFixed(1).replace('.', ',');
 }
+
+/** Durée d'un message vocal : « 0:07 », « 1:42 », null si inconnue. */
+export function formatVoiceDuration(ms: number | null | undefined): string | null {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  const total = Math.max(1, Math.round(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}

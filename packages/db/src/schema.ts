@@ -101,6 +101,8 @@ export const users = pgTable(
     appleSub: varchar('apple_sub', { length: 255 }),
     googleSub: varchar('google_sub', { length: 255 }),
     stripeCustomerId: varchar('stripe_customer_id', { length: 64 }),
+    /** Préférences push par catégorie (NotificationPrefs, partiel : valeurs par défaut sinon). */
+    notificationPrefs: jsonb('notification_prefs').$type<Partial<Record<'bookingUpdates' | 'messages' | 'reminders' | 'marketing', boolean>>>().notNull().default({}),
     suspendedAt: ts('suspended_at'),
     deletedAt: ts('deleted_at'),
     ...timestamps,
@@ -741,6 +743,8 @@ export const messages = pgTable(
     body: text('body'),
     fileId: uuid('file_id'),
     clientId: varchar('client_id', { length: 64 }),
+    /** Durée des messages vocaux (ms). */
+    durationMs: integer('duration_ms'),
     flaggedAt: ts('flagged_at'),
     ...timestamps,
   },

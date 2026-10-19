@@ -4,6 +4,7 @@ import {
   DEEP_LINKS,
   RULES,
   TERMINAL_BOOKING_STATUSES,
+  clientDisputeBlockedReason,
   computeCommission,
   computePrice,
   quoteNeedsNewAuthorization,
@@ -13,6 +14,7 @@ import {
   type BookingStatus,
   type CallRelayDto,
   type CancelBookingBody,
+  type CompletionCodeErrorDetails,
   type CreateBookingBody,
   type CreateBookingResult,
   type CreateQuoteBody,
@@ -289,7 +291,17 @@ export class BookingsService {
   async confirmPayment(userId: string | null, bookingId: string): Promise<BookingRow> {
     let b = await this.load(bookingId);
     if (userId && b.clientId !== userId) throw forbidden('booking_forbidden', "Vous n'avez pas accès à cette intervention.");
-    if (b.status !== 'pending_payment') return b;
+    if (b.status !== 'pending_payment') {
+      // Après la payment sheet d'un complément de devis (> autorisé + 20 %) : on confirme l'autorisation.
+      const sup = await this.payments.syncSupplements(b.id);
+      if (userId && sup.failed && !sup.authorized && !sup.pending) {
+        throw paymentRequired('supplement_failed', 'Le paiement complémentaire a été refusé. Essayez une autre carte ou contactez votre banque.');
+      }
+      if (userId && sup.pending) {
+        throw paymentRequired('supplement_not_authorized', "Le paiement complémentaire n'a pas encore été validé. Réessayez dans un instant.");
+      }
+      return sup.authorized ? this.load(b.id) : b;
+    }
     const sync = await this.payments.syncPending(b.id);
     if (!sync.ok) throw paymentRequired('payment_not_authorized', "Le paiement n'a pas encore été validé. Réessayez dans un instant.");
     try {
@@ -573,10 +585,10 @@ export class BookingsService {
         });
       }
       if (check.attempts >= max) {
-        throw locked('code_locked', 'Code bloqué après 3 essais. Le support DEPANO a été alerté et va vous contacter.', { attemptsLeft: 0 });
+        throw locked('code_locked', 'Code bloqué après 3 essais. Le support DEPANO a été alerté et va vous contacter.', { attemptsLeft: 0 } satisfies CompletionCodeErrorDetails);
       }
       const left = max - check.attempts;
-      throw badRequest('code_invalid', `Code incorrect. Il vous reste ${left} essai${left > 1 ? 's' : ''}.`, { attemptsLeft: left });
+      throw badRequest('code_invalid', `Code incorrect. Il vous reste ${left} essai${left > 1 ? 's' : ''}.`, { attemptsLeft: left } satisfies CompletionCodeErrorDetails);
     }
     const closed = await this.state.transition(b.id, 'closed', 'artisan', user.id, { note: 'Code de fin validé' });
     await this.finalizeClosure(closed);
@@ -695,6 +707,9 @@ export class BookingsService {
       note: body.reason,
       guard: (row) => {
         previous = row.status as BookingStatus;
+        // RDV à venir : pas de litige « technicien jamais venu » avant l'heure prévue.
+        const blocked = clientDisputeBlockedReason({ status: row.status as BookingStatus, scheduledAt: row.scheduledAt });
+        if (blocked) throw conflict('dispute_too_early', blocked);
       },
       inTx: async (tx, row) => {
         await tx

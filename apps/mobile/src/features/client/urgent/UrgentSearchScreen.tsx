@@ -35,16 +35,6 @@ export function UrgentSearchScreen({ bookingId }: { bookingId: string }) {
     return () => clearTimeout(id);
   }, []);
 
-  // Filet de sécurité : un refetch déclenché par « booking.updated » peut écraser le compteur
-  // reçu juste avant par « booking.dispatch ». Pendant la recherche, on resynchronise toutes les 5 s.
-  const searching = b?.status === 'searching' || b?.status === 'pending_payment';
-  const { refetch } = live;
-  useEffect(() => {
-    if (!searching) return;
-    const id = setInterval(() => void refetch(), 5000);
-    return () => clearInterval(id);
-  }, [searching, refetch]);
-
   // Un artisan a accepté : on passe au suivi en direct.
   const navigation = useNavigation();
   const redirected = useRef(false);

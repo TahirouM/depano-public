@@ -1,10 +1,9 @@
-import { Screen, SkeletonList, useTheme } from '@depano/ui';
+import { ArtisanCard, Screen, SkeletonList, useTheme } from '@depano/ui';
 import { router, Stack } from 'expo-router';
 import { Heart } from 'lucide-react-native';
 import { View } from 'react-native';
 import { AuthGate } from '@/components/AuthGate';
 import { QueryView } from '@/components/QueryView';
-import { FavoriteArtisanCard } from '../components/FavoriteArtisanCard';
 import { useFavorites, useToggleFavorite } from '../queries';
 
 /** Favoris : artisans enregistrés, retrait en optimiste. */
@@ -32,7 +31,7 @@ function Inner() {
         {(list) => (
           <View style={{ gap: t.spacing.md }} testID="favorites">
             {list.map((a) => (
-              <FavoriteArtisanCard
+              <ArtisanCard
                 key={a.id}
                 artisan={a}
                 favorite

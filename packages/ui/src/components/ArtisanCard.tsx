@@ -37,8 +37,11 @@ export function ArtisanCard({ artisan: a, onPress, favorite, onToggleFavorite, l
     .filter(Boolean)
     .join(', ');
 
+  // Le cœur est un bouton frère posé par-dessus la carte (jamais imbriqué dans la carte cliquable :
+  // un bouton dans un bouton est invalide sur le web et brouille les lecteurs d'écran).
   return (
-    <Card variant="brand" onPress={onPress} accessibilityLabel={a11y} style={layout === 'compact' ? { width: 280 } : undefined}>
+    <View style={layout === 'compact' ? { width: 280 } : undefined}>
+    <Card variant="brand" onPress={onPress} accessibilityLabel={a11y}>
       <View style={[styles.row, { gap: t.spacing.md }]}>
         <Avatar name={a.displayName} uri={a.avatarUrl} size={layout === 'compact' ? 48 : 64} />
         <View style={styles.flex}>
@@ -57,17 +60,8 @@ export function ArtisanCard({ artisan: a, onPress, favorite, onToggleFavorite, l
             ) : null}
           </View>
         </View>
-        {onToggleFavorite ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-            accessibilityState={{ selected: !!favorite }}
-            onPress={onToggleFavorite}
-            style={styles.fav}
-          >
-            <Heart size={22} color={t.colors.tone.urgent.text} fill={favorite ? t.colors.tone.urgent.text : 'transparent'} />
-          </Pressable>
-        ) : null}
+        {/* Réserve la place du cœur superposé. */}
+        {onToggleFavorite ? <View style={styles.fav} /> : null}
       </View>
       <View style={[styles.wrap, { gap: t.spacing.xs, marginTop: t.spacing.md }]}>
         {a.domains.map((d) => (
@@ -97,6 +91,20 @@ export function ArtisanCard({ artisan: a, onPress, favorite, onToggleFavorite, l
         ) : null}
       </View>
     </Card>
+    {onToggleFavorite ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={favorite ? `Retirer ${a.displayName} des favoris` : `Ajouter ${a.displayName} aux favoris`}
+        accessibilityState={{ selected: !!favorite }}
+        onPress={onToggleFavorite}
+        hitSlop={4}
+        style={[styles.fav, styles.favOverlay, { top: t.spacing.lg, right: t.spacing.lg }]}
+        testID={`fav-${a.id}`}
+      >
+        <Heart size={22} color={t.colors.tone.urgent.text} fill={favorite ? t.colors.tone.urgent.text : 'transparent'} />
+      </Pressable>
+    ) : null}
+    </View>
   );
 }
 
@@ -119,4 +127,5 @@ const styles = StyleSheet.create({
   flex: { flex: 1, gap: 2 },
   shrink: { flexShrink: 1 },
   fav: { width: MIN_TOUCH, height: MIN_TOUCH, alignItems: 'center', justifyContent: 'center' },
+  favOverlay: { position: 'absolute' },
 });

@@ -219,6 +219,23 @@ export class DispatchService {
     return Promise.all(rows.map(({ o, b }) => this.toOfferDto(o, b)));
   }
 
+  /**
+   * Détail d'une offre de l'artisan, quel que soit son statut (écran plein écran ouvert depuis une notification).
+   * Une offre encore « pending » mais échue ou dont l'intervention n'est plus en recherche est présentée comme
+   * expirée / prise, sans attendre le job de fin de vague.
+   */
+  async getOffer(artisanId: string, offerId: string): Promise<UrgentOfferDto> {
+    const o = await this.offerFor(artisanId, offerId);
+    const [b] = await this.conn.db.select().from(bookings).where(eq(bookings.id, o.bookingId));
+    if (!b) throw notFound('offer_not_found', 'Offre introuvable.');
+    const dto = await this.toOfferDto(o, b);
+    if (dto.status === 'pending') {
+      if (b.status !== 'searching') dto.status = b.artisanId && b.artisanId !== artisanId ? 'taken' : 'expired';
+      else if (o.expiresAt <= new Date()) dto.status = 'expired';
+    }
+    return dto;
+  }
+
   private async offerFor(artisanId: string, offerId: string) {
     const [o] = await this.conn.db.select().from(dispatchOffers).where(eq(dispatchOffers.id, offerId));
     if (!o) throw notFound('offer_not_found', 'Offre introuvable.');

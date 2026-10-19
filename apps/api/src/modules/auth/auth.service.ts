@@ -64,7 +64,7 @@ export class AuthService {
       ip,
     });
     await this.sms.send(phone, `DEPANO : votre code de connexion est ${code}. Il expire dans 5 minutes. Ne le communiquez à personne.`);
-    return { sent: true as const, retryAfterSeconds: OTP_COOLDOWN_SECONDS, ...(this.config.isProd ? {} : { devCode: code }) };
+    return { sent: true as const, retryAfterSeconds: this.limiter.cooldownSeconds(OTP_COOLDOWN_SECONDS), ...(this.config.isProd ? {} : { devCode: code }) };
   }
 
   async verifyOtp(phone: string, code: string, meta: SessionMeta): Promise<AuthResult> {

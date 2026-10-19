@@ -7,7 +7,7 @@ import { useOutboxStore } from '@/stores/outbox';
 import { api, setSessionExpiredHandler } from './api';
 import { queryClient, queryPersister } from './query/client';
 import { qk } from './query/keys';
-import { registerPushTokenIfGranted } from './push';
+import { registerPushTokenIfGranted, unregisterPushToken } from './push';
 
 /** Enregistre la session après OTP / Apple / Google. */
 export function completeSignIn(result: AuthResult) {
@@ -29,6 +29,8 @@ async function wipeLocalData() {
 
 export async function signOut() {
   const refreshToken = useAuthStore.getState().refreshToken;
+  // Plus de push pour ce compte sur cet appareil (jeton d'accès encore valide à ce stade).
+  await unregisterPushToken();
   if (refreshToken) await api.auth.logout({ refreshToken }).catch(() => undefined);
   await wipeLocalData();
   router.replace('/accueil');

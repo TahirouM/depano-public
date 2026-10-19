@@ -11,6 +11,7 @@ export const qk = {
   favorites: ['me', 'favorites'] as const,
   paymentMethods: ['me', 'payment-methods'] as const,
   invoices: ['me', 'invoices'] as const,
+  notificationPrefs: ['me', 'notification-preferences'] as const,
   sessions: ['auth', 'sessions'] as const,
 
   catalog: {
@@ -22,6 +23,13 @@ export const qk = {
     reviews: (id: string) => ['catalog', 'artisan', id, 'reviews'] as const,
     estimate: (b: Partial<EstimateBody>) => ['catalog', 'estimate', b] as const,
     address: (q: string) => ['catalog', 'address', q] as const,
+  },
+
+  /**
+   * État poussé par le temps réel, jamais refetché (hors du préfixe `bookings` : une invalidation ne l'écrase pas).
+   */
+  live: {
+    dispatch: (bookingId: string) => ['live', 'dispatch', bookingId] as const,
   },
 
   bookings: {
@@ -38,6 +46,8 @@ export const qk = {
     dashboard: ['artisan', 'dashboard'] as const,
     planning: (from: string, to: string) => ['artisan', 'planning', from, to] as const,
     offers: ['artisan', 'offers'] as const,
+    /** Préfixée par `offers` : invalider la liste rafraîchit aussi le détail. */
+    offer: (id: string) => ['artisan', 'offers', 'detail', id] as const,
     earnings: ['artisan', 'earnings'] as const,
     stats: ['artisan', 'stats'] as const,
     reviews: ['artisan', 'reviews'] as const,

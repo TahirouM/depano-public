@@ -44,6 +44,25 @@ export function useOffers(enabled = true) {
   });
 }
 
+/**
+ * Une offre par identifiant (`GET /artisan/offers/:id`), quel que soit son statut. Le cache de la liste / du tableau
+ * de bord sert de valeur initiale pour un affichage immédiat depuis la notification.
+ */
+export function useOffer(offerId: string) {
+  const signedIn = useIsSignedIn();
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: qk.artisan.offer(offerId),
+    queryFn: () => api.artisan.offer(offerId),
+    enabled: signedIn && !!offerId,
+    initialData: () => findCachedOffer(qc, offerId),
+    initialDataUpdatedAt: 0,
+    staleTime: 5_000,
+    retry: (n, e) => !(e instanceof ApiError && (e.status === 404 || e.status === 403)) && n < 2,
+    meta: { persist: false },
+  });
+}
+
 export function usePlanning(from: string, to: string) {
   const signedIn = useIsSignedIn();
   return useQuery({

@@ -136,6 +136,30 @@ export class PaymentsService {
     return { ok: false, setup: p.kind === 'setup' };
   }
 
+  /**
+   * Compléments de devis en attente de validation client : interroge le prestataire, marque autorisés
+   * (⇒ `authorizedCents` mis à jour) ou refusés. Idempotent.
+   */
+  async syncSupplements(bookingId: string): Promise<{ authorized: number; pending: number; failed: number }> {
+    const rows = await this.conn.db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.bookingId, bookingId), eq(payments.kind, 'supplement'), eq(payments.status, 'requires_action')));
+    const out = { authorized: 0, pending: 0, failed: 0 };
+    for (const p of rows) {
+      if (!p.providerRef) continue;
+      const intent = await this.provider.getIntent(p.providerRef);
+      if (intent.status === 'authorized' || intent.status === 'succeeded') {
+        await this.markAuthorized(p.providerRef, intent.paymentMethodId);
+        out.authorized++;
+      } else if (intent.status === 'failed' || intent.status === 'cancelled') {
+        await this.conn.db.update(payments).set({ status: intent.status === 'failed' ? 'failed' : 'cancelled' }).where(eq(payments.id, p.id));
+        out.failed++;
+      } else out.pending++;
+    }
+    return out;
+  }
+
   /** Autorisation hors session 24 h avant un RDV lointain (job authorize-scheduled). */
   async authorizeScheduled(b: BookingRow) {
     const [setup] = await this.conn.db

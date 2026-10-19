@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { useOutboxStore } from '@/stores/outbox';
 import { prependNotificationInCache, upsertMessageInCache } from '../query/cache';
 import { qk } from '../query/keys';
+import { mergeDispatch, type DispatchProgress } from './dispatch';
 
 type Handlers = { [K in keyof ServerToClientEvents]: ServerToClientEvents[K] };
 
@@ -26,7 +27,15 @@ export function createRealtimeHandlers(qc: QueryClient, hooks: { onOffer?: (offe
       patchBooking(e.bookingId, { artisanLocation: { lat: e.lat, lng: e.lng }, etaMinutes: e.etaMinutes });
     },
     'booking.dispatch': (e) => {
-      patchBooking(e.bookingId, { dispatch: { wave: e.wave, contacted: e.contacted, radiusKm: e.radiusKm } });
+      // Clé dédiée (non refetchée) : un refetch du détail déclenché par « booking.updated » et parti avant cet
+      // événement ne peut plus écraser le compteur ; useBookingLive fusionne les deux (mergeDispatch).
+      const next = mergeDispatch(qc.getQueryData<DispatchProgress>(qk.live.dispatch(e.bookingId)), {
+        wave: e.wave,
+        contacted: e.contacted,
+        radiusKm: e.radiusKm,
+      });
+      qc.setQueryData(qk.live.dispatch(e.bookingId), next);
+      patchBooking(e.bookingId, { dispatch: next });
     },
     'message.created': (m) => {
       upsertMessageInCache(qc, m);

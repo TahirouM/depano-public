@@ -55,19 +55,43 @@ import { parisStartOfDay, parisToUtc, addDays, parisDate } from '../../common/ti
 type ProfileRow = typeof artisanProfiles.$inferSelect;
 type DocumentRow = typeof artisanDocuments.$inferSelect;
 
-/** Codes APE → métiers DEPANO. */
-export function domainsForApe(ape: string | null): DomainCode[] {
-  const code = (ape ?? '').replace(/\s/g, '').toUpperCase();
-  if (/^43\.?22[AB]$/.test(code)) return ['plomberie', 'energetique'];
-  if (/^43\.?21[AB]$/.test(code)) return ['electricite'];
-  return [];
+/**
+ * Normalise un code APE / NAF quel que soit le format renvoyé par les répertoires :
+ * « 43.22A » (SIRENE), « 4322A », « 43.22.A », « 4322AZ » (répertoire des métiers), « 43.22G » (NAF 2025)…
+ * Renvoie « 43.22A » (division.groupe + lettre) ou null.
+ */
+export function normalizeApe(ape: string | null | undefined): string | null {
+  const m = /^(\d{2})\.?(\d{2})\.?([A-Z])?[A-Z]?$/.exec((ape ?? '').replace(/[\s_-]/g, '').toUpperCase());
+  if (!m) return null;
+  return `${m[1]}.${m[2]}${m[3] ?? ''}`;
 }
+
+/** Codes APE → métiers DEPANO (43.22 : plomberie + chauffage/énergétique ; 43.21 : électricité). */
+export function domainsForApe(...apes: (string | null | undefined)[]): DomainCode[] {
+  const out = new Set<DomainCode>();
+  for (const ape of apes) {
+    const code = normalizeApe(ape);
+    if (!code) continue;
+    if (code.startsWith('43.22')) (['plomberie', 'energetique'] as const).forEach((d) => out.add(d));
+    if (code.startsWith('43.21')) out.add('electricite');
+  }
+  return (['plomberie', 'electricite', 'energetique'] as const).filter((d) => out.has(d));
+}
+
+/** Libellés des codes APE du bâtiment (l'API Recherche d'entreprises ne renvoie plus toujours le libellé). */
+const APE_LABELS: Record<string, string> = {
+  '43.21A': "Travaux d'installation électrique dans tous locaux",
+  '43.21B': "Travaux d'installation électrique sur la voie publique",
+  '43.22A': "Travaux d'installation d'eau et de gaz en tous locaux",
+  '43.22B': "Travaux d'installation d'équipements thermiques et de climatisation",
+};
 
 interface EntrepriseResult {
   siren: string;
   nom_complet?: string;
   nom_raison_sociale?: string;
   activite_principale?: string;
+  activite_principale_naf25?: string;
   libelle_activite_principale?: string;
   etat_administratif?: string;
   siege?: Etablissement;
@@ -79,6 +103,8 @@ interface Etablissement {
   code_postal?: string;
   libelle_commune?: string;
   activite_principale?: string;
+  activite_principale_naf25?: string;
+  activite_principale_registre_metier?: string;
   etat_administratif?: string;
 }
 
@@ -137,8 +163,16 @@ export class ArtisanService {
     if (!r) return null;
     const etab = r.matching_etablissements?.find((e) => e.siret === siret) ?? (r.siege?.siret === siret ? r.siege : undefined);
     if (!etab && r.siren !== siret.slice(0, 9)) return null;
-    const ape = etab?.activite_principale ?? r.activite_principale ?? null;
-    const suggested = domainsForApe(ape);
+    const rawApe = etab?.activite_principale ?? r.activite_principale ?? null;
+    const ape = normalizeApe(rawApe) ?? rawApe;
+    // Tous les codes connus de l'établissement et de l'unité légale (NAF 2008, NAF 2025, répertoire des métiers).
+    const suggested = domainsForApe(
+      etab?.activite_principale,
+      etab?.activite_principale_registre_metier,
+      r.activite_principale,
+      etab?.activite_principale_naf25,
+      r.activite_principale_naf25,
+    );
     return {
       siret,
       siren: r.siren,
@@ -147,7 +181,7 @@ export class ArtisanService {
       postalCode: etab?.code_postal ?? r.siege?.code_postal ?? null,
       city: etab?.libelle_commune ?? r.siege?.libelle_commune ?? null,
       apeCode: ape,
-      apeLabel: r.libelle_activite_principale ?? null,
+      apeLabel: r.libelle_activite_principale ?? (ape ? APE_LABELS[ape] ?? null : null),
       active: r.etat_administratif === 'A' && (etab?.etat_administratif ?? 'A') === 'A',
       suggestedDomains: suggested,
       apeMatchesTrade: suggested.length > 0,
@@ -157,12 +191,13 @@ export class ArtisanService {
   async lookupSiret(userId: string, siret: string): Promise<CompanyInfoDto> {
     const info = await this.fetchCompany(siret);
     if (!info) throw notFound('siret_not_found', 'SIRET introuvable dans le répertoire des entreprises.');
+    // Contrôle avant de créer le brouillon : un SIRET déjà pris ne doit pas transformer le compte en artisan.
+    const [other] = await this.conn.db.select({ id: artisanProfiles.id }).from(artisanProfiles).where(and(eq(artisanProfiles.siret, siret), ne(artisanProfiles.userId, userId)));
+    if (other) throw conflict('siret_taken', 'Ce SIRET est déjà associé à un autre compte artisan.');
     const profile = await this.me.ensureArtisanDraft(userId, { displayName: info.name || undefined });
     if (!['draft', 'rejected'].includes(profile.status) && profile.siret !== siret) {
       throw conflict('siret_locked', 'Le SIRET ne peut plus être modifié après la soumission du dossier.');
     }
-    const [other] = await this.conn.db.select({ id: artisanProfiles.id }).from(artisanProfiles).where(and(eq(artisanProfiles.siret, siret), ne(artisanProfiles.id, profile.id)));
-    if (other) throw conflict('siret_taken', 'Ce SIRET est déjà associé à un autre compte artisan.');
     const verified = info.name !== '';
     await this.conn.db
       .update(artisanProfiles)

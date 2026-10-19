@@ -4,9 +4,11 @@ import {
   type BookingListQuery,
   type MessageDto,
   type NotificationDto,
+  type NotificationPrefs,
+  type NotificationPrefsBody,
   type Paginated,
 } from '@depano/schemas';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useAuthStore, selectIsSignedIn } from '@/stores/auth';
 import { qk } from './keys';
@@ -22,6 +24,30 @@ export function useIsSignedIn() {
 export function useMe() {
   const signedIn = useIsSignedIn();
   return useQuery({ queryKey: qk.me, queryFn: api.me.get, enabled: signedIn, staleTime: 60_000 });
+}
+
+/** Préférences de notifications push (serveur : `GET/PUT /me/notification-preferences`). */
+export function useNotificationPrefs() {
+  const signedIn = useIsSignedIn();
+  return useQuery({ queryKey: qk.notificationPrefs, queryFn: api.me.notificationPrefs, enabled: signedIn, staleTime: 5 * 60_000 });
+}
+
+/** Mise à jour optimiste d'une préférence (rétablie en cas d'erreur). */
+export function useUpdateNotificationPrefs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: NotificationPrefsBody) => api.me.updateNotificationPrefs(b),
+    onMutate: async (b) => {
+      await qc.cancelQueries({ queryKey: qk.notificationPrefs });
+      const previous = qc.getQueryData<NotificationPrefs>(qk.notificationPrefs);
+      if (previous) qc.setQueryData<NotificationPrefs>(qk.notificationPrefs, { ...previous, ...b });
+      return { previous };
+    },
+    onError: (_e, _b, c) => {
+      if (c?.previous) qc.setQueryData(qk.notificationPrefs, c.previous);
+    },
+    onSuccess: (prefs) => qc.setQueryData(qk.notificationPrefs, prefs),
+  });
 }
 
 export function useBadges() {

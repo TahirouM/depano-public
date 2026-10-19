@@ -14,16 +14,21 @@ export class FakePaymentProvider implements PaymentProvider {
   readonly name = 'fake' as const;
   private readonly logger = new Logger('FakePayments');
   private seq = 0;
+  /** États forcés (tests) : simule un client qui n'a pas encore validé, ou une carte refusée. */
+  readonly intentOverrides = new Map<string, 'requires_action' | 'failed' | 'cancelled'>();
 
   async ensureCustomer(user: { id: string; customerId: string | null }) {
     return user.customerId ?? `cus_fake_${short(user.id)}`;
   }
 
-  async createAuthorization(input: { bookingId: string; kind: string; amountCents: number }) {
+  async createAuthorization(input: { bookingId: string; kind: string; amountCents: number; offSession?: boolean }) {
     // Déterministe à partir des entrées ; le compteur ne sert qu'à distinguer deux autorisations identiques.
     const id = `pi_fake_${short(`${input.bookingId}:${input.kind}:${input.amountCents}:${this.seq++}`)}`;
     this.logger.log(`autorisation ${id} ${input.amountCents} c (${input.kind})`);
-    return { id, clientSecret: `${id}_secret_fake`, status: 'authorized' as const };
+    // Comme Stripe : un complément « en session » attend la validation du client (payment sheet) puis
+    // POST /bookings/:id/confirm-payment ; l'empreinte initiale et les compléments hors session passent directement.
+    const status = input.kind === 'supplement' && !input.offSession ? ('requires_action' as const) : ('authorized' as const);
+    return { id, clientSecret: `${id}_secret_fake`, status };
   }
 
   async createSetupIntent(input: { customerId: string; bookingId?: string }) {
@@ -36,6 +41,8 @@ export class FakePaymentProvider implements PaymentProvider {
   }
 
   async getIntent(id: string) {
+    const forced = this.intentOverrides.get(id);
+    if (forced) return { status: forced, amountCapturableCents: 0, paymentMethodId: null };
     if (id.startsWith('seti_')) return { status: 'setup_succeeded' as const, amountCapturableCents: 0, paymentMethodId: 'pm_fake_visa' };
     return { status: 'authorized' as const, amountCapturableCents: Number.MAX_SAFE_INTEGER, paymentMethodId: 'pm_fake_visa' };
   }

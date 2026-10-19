@@ -52,6 +52,8 @@ interface CardRow extends Record<string, unknown> {
   avatar_file_id: string | null;
   from_price: number | null;
   distance_km: number | null;
+  approx_lat: number | null;
+  approx_lng: number | null;
   insured: boolean;
 }
 
@@ -91,6 +93,7 @@ export class CatalogService {
     return sql`
       select a.id, a.display_name, a.company_name, a.domains, a.rating_avg, a.rating_count, a.urgent_available,
         a.urgent_suspended_until, a.siret, a.company_active, a.qualifications, u.avatar_file_id, a.created_at,
+        round(a.base_lat::numeric, 2)::float8 as approx_lat, round(a.base_lng::numeric, 2)::float8 as approx_lng,
         (select min(s.price_cents) from artisan_services s join services sv on sv.id = s.service_id
            where s.artisan_id = a.id and sv.active ${opts.domain ? sql`and sv.domain = ${opts.domain}::domain_code` : sql``})::int as from_price,
         ${hasPoint ? sql`(ST_Distance(a.base_location, ${point(opts.lat!, opts.lng!)}) / 1000.0)::float8` : sql`null::float8`} as distance_km,
@@ -112,6 +115,8 @@ export class CatalogService {
         ratingAvg: r.rating_avg != null ? Math.round(Number(r.rating_avg) * 10) / 10 : null,
         ratingCount: Number(r.rating_count),
         distanceKm: r.distance_km != null ? Math.round(Number(r.distance_km) * 10) / 10 : null,
+        approxLat: r.approx_lat != null ? Number(r.approx_lat) : null,
+        approxLng: r.approx_lng != null ? Number(r.approx_lng) : null,
         fromPriceCents: r.from_price != null ? Number(r.from_price) : null,
         urgentAvailable: !!r.urgent_available && (!r.urgent_suspended_until || new Date(r.urgent_suspended_until) < new Date()),
         nextSlotAt: next.get(r.id) ?? null,

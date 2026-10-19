@@ -82,3 +82,18 @@ export function nextStatuses(from: BookingStatus, actor: Actor, kind: BookingKin
 export function artisanCanSeeExactAddress(status: BookingStatus): boolean {
   return !['pending_payment', 'searching', 'expired'].includes(status);
 }
+
+/**
+ * Garde métier en plus de la machine à états : un RDV planifié encore « accepted » dont l'heure n'est pas arrivée ne
+ * peut pas faire l'objet d'un litige client (pas de « technicien jamais venu » avant le rendez-vous ; le client peut
+ * annuler). Renvoie le message d'erreur à afficher, ou null si le litige est possible.
+ */
+export function clientDisputeBlockedReason(
+  b: { status: BookingStatus; scheduledAt: Date | string | null },
+  now: Date = new Date(),
+): string | null {
+  if (b.status !== 'accepted' || !b.scheduledAt) return null;
+  const at = typeof b.scheduledAt === 'string' ? new Date(b.scheduledAt) : b.scheduledAt;
+  if (at.getTime() <= now.getTime()) return null;
+  return "Le rendez-vous n'a pas encore eu lieu : vous pourrez signaler un problème à partir de l'heure prévue. Pour changer vos plans, annulez ou contactez l'artisan.";
+}

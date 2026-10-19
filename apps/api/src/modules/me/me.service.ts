@@ -8,6 +8,9 @@ import {
   type InvoiceDto,
   type Me,
   type PushTokenBody,
+  type NotificationPrefsBody,
+  DEFAULT_NOTIFICATION_PREFS,
+  type NotificationPrefs,
   type Role,
   type SetActiveRoleBody,
   type SetupIntentDto,
@@ -210,6 +213,27 @@ export class MeService {
       .insert(pushTokens)
       .values({ userId: user.id, token: body.token, platform: body.platform })
       .onConflictDoUpdate({ target: pushTokens.token, set: { userId: user.id, platform: body.platform, disabledAt: null, updatedAt: new Date() } });
+  }
+
+  /** Désinscription d'un jeton (déconnexion) : uniquement s'il appartient à l'utilisateur. Idempotent. */
+  async unregisterPushToken(user: AuthUser, token: string) {
+    await this.conn.db.delete(pushTokens).where(and(eq(pushTokens.userId, user.id), eq(pushTokens.token, token)));
+  }
+
+  /* ---------------------- Préférences de notifications ---------------------- */
+
+  async notificationPrefs(user: AuthUser): Promise<NotificationPrefs> {
+    const [u] = await this.conn.db.select({ prefs: users.notificationPrefs }).from(users).where(eq(users.id, user.id));
+    return { ...DEFAULT_NOTIFICATION_PREFS, ...(u?.prefs ?? {}) };
+  }
+
+  async updateNotificationPrefs(user: AuthUser, body: NotificationPrefsBody): Promise<NotificationPrefs> {
+    // Fusion atomique dans le jsonb (pas de lecture-écriture concurrente).
+    await this.conn.db
+      .update(users)
+      .set({ notificationPrefs: sql`${users.notificationPrefs} || ${JSON.stringify(body)}::jsonb`, updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+    return this.notificationPrefs(user);
   }
 
   /* ------------------------------ Adresses ----------------------------- */

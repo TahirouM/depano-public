@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from '@depano/db';
 import * as s from '@depano/db';
 import { StorageService } from '../src/infra/storage';
+import { PAYMENT_PROVIDER } from '../src/infra/tokens';
+import type { FakePaymentProvider } from '../src/providers/fake-payment.provider';
 import { call, createTestApp, PHONES, resetState, seedFixtures, tokenOf, type Fixtures, type TestContext } from './helpers';
 import { ARTISAN_PHONE_BY_ID, urgentAwaitingCode, urgentSearching } from './flows';
 
@@ -123,7 +125,22 @@ describe('Parcours urgence de bout en bout (paiement factice)', () => {
     expect(answered.status).toBe(200);
     expect(answered.body.booking.status).toBe('in_progress');
     expect(answered.body.payment).toMatchObject({ provider: 'fake', amountCents: 5500 });
-    expect(answered.body.booking.authorizedCents).toBe(20000);
+    // Le complément attend la validation du client (payment sheet) : pas encore compté.
+    expect(answered.body.booking.authorizedCents).toBe(14500);
+    const supRef = answered.body.payment.paymentIntentId as string;
+    const fake = ctx.app.get<FakePaymentProvider>(PAYMENT_PROVIDER);
+    fake.intentOverrides.set(supRef, 'requires_action');
+    const notYet = await call(ctx, 'POST', `/bookings/${id}/confirm-payment`, { token: client });
+    expect(notYet.status).toBe(402);
+    expect(notYet.body.code).toBe('supplement_not_authorized');
+    fake.intentOverrides.delete(supRef);
+    // Après la payment sheet : POST confirm-payment confirme le complément (statut prestataire vérifié).
+    const supConfirmed = await call(ctx, 'POST', `/bookings/${id}/confirm-payment`, { token: client });
+    expect(supConfirmed.status).toBe(200);
+    expect(supConfirmed.body.status).toBe('in_progress');
+    expect(supConfirmed.body.authorizedCents).toBe(20000);
+    // Idempotent
+    expect((await call(ctx, 'POST', `/bookings/${id}/confirm-payment`, { token: client })).body.authorizedCents).toBe(20000);
 
     // Compte rendu → attente du code
     const report = await call(ctx, 'POST', `/bookings/${id}/report`, { token: winner, body: { feasible: true, notes: 'Siphon remplacé', materials: 'Siphon PVC' } });
@@ -171,8 +188,9 @@ describe('Parcours urgence de bout en bout (paiement factice)', () => {
     const reply = await call(ctx, 'POST', `/reviews/${review.body.id}/reply`, { token: winner, body: { body: 'Merci !' } });
     expect(reply.body.reply.body).toBe('Merci !');
     const [prof2] = await ctx.db.select().from(s.artisanProfiles).where(eq(s.artisanProfiles.id, winnerArtisanId));
-    expect(prof2!.ratingCount).toBe(1);
-    expect(prof2!.ratingAvg).toBe(4);
+    // Mise à jour incrémentale : l'historique (4,5 / 10 avis) est conservé.
+    expect(prof2!.ratingCount).toBe(11);
+    expect(prof2!.ratingAvg).toBeCloseTo((4.5 * 10 + 4) / 11, 4);
 
     // Journal complet
     const events = await ctx.db.select().from(s.bookingEvents).where(eq(s.bookingEvents.bookingId, id));

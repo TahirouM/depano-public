@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { NotificationDto, NotificationType, Paginated } from '@depano/schemas';
+import { DEFAULT_NOTIFICATION_PREFS, notificationPrefCategory, type NotificationDto, type NotificationType, type Paginated } from '@depano/schemas';
 import { and, desc, eq, isNull, lt, notifications, or, pushTokens, sql, users } from '@depano/db';
 import { arrayContains } from 'drizzle-orm';
 import { DbConnection } from '../../infra/db';
@@ -85,6 +85,13 @@ export class NotificationsService {
 
   /** Traitement du job « push » (worker). */
   async deliverPush(job: { userId: string; title: string; body: string; link?: string; data?: Record<string, unknown> }) {
+    // Préférences : la notification in-app est déjà enregistrée ; seul le push est filtré.
+    const category = notificationPrefCategory(typeof job.data?.type === 'string' ? job.data.type : undefined);
+    if (category) {
+      const [u] = await this.conn.db.select({ prefs: users.notificationPrefs }).from(users).where(eq(users.id, job.userId));
+      const prefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(u?.prefs ?? {}) };
+      if (!prefs[category]) return { sent: 0, skipped: 'preference' as const };
+    }
     const tokens = await this.conn.db
       .select({ token: pushTokens.token })
       .from(pushTokens)

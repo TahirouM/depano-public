@@ -5,7 +5,7 @@ import MapView, { Circle, Marker } from 'react-native-maps';
 import type { LiveMapProps } from './types';
 
 /** Carte native (Apple Plans / Google Maps) : adresse, artisan en direct, rayon de recherche. */
-export function LiveMap({ center, destination, artisan, artisanName, radiusKm, height = 260, accessibilityLabel }: LiveMapProps) {
+export function LiveMap({ center, destination, artisan, artisanName, markers, radiusKm, height = 260, accessibilityLabel }: LiveMapProps) {
   const t = useTheme();
   const ref = useRef<MapView>(null);
   const span = radiusKm ? (radiusKm / 111) * 2.4 : 0.03;
@@ -49,6 +49,17 @@ export function LiveMap({ center, destination, artisan, artisanName, radiusKm, h
         {artisan ? (
           <Marker coordinate={{ latitude: artisan.lat, longitude: artisan.lng }} title={artisanName ?? 'Artisan'} pinColor={t.colors.tone.info.solid} />
         ) : null}
+        {markers?.map((m) => (
+          <Marker
+            key={m.id}
+            identifier={m.id}
+            coordinate={{ latitude: m.lat, longitude: m.lng }}
+            title={m.title}
+            description={m.description}
+            pinColor={t.colors.tone.info.solid}
+            onCalloutPress={m.onPress}
+          />
+        ))}
       </MapView>
     </View>
   );

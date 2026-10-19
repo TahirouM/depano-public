@@ -1,6 +1,6 @@
 import { Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AddressBody, PushTokenBody, SetActiveRoleBody, UpdateMeBody } from '@depano/schemas';
+import { AddressBody, NotificationPrefsBody, PushTokenBody, SetActiveRoleBody, UpdateMeBody } from '@depano/schemas';
 import type { z } from 'zod';
 import { CurrentUser, type AuthUser } from '../../common/auth';
 import { IdParam } from '../../common/params';
@@ -50,6 +50,22 @@ export class MeController {
   @HttpCode(204)
   async pushToken(@CurrentUser() user: AuthUser, @ZBody(PushTokenBody) body: z.output<typeof PushTokenBody>) {
     await this.me.registerPushToken(user, body);
+  }
+
+  @Delete('push-tokens/:token')
+  @HttpCode(204)
+  async unregisterPushToken(@CurrentUser() user: AuthUser, @Param('token') token: string) {
+    await this.me.unregisterPushToken(user, token);
+  }
+
+  @Get('notification-preferences')
+  notificationPrefs(@CurrentUser() user: AuthUser) {
+    return this.me.notificationPrefs(user);
+  }
+
+  @Put('notification-preferences')
+  updateNotificationPrefs(@CurrentUser() user: AuthUser, @ZBody(NotificationPrefsBody) body: z.output<typeof NotificationPrefsBody>) {
+    return this.me.updateNotificationPrefs(user, body);
   }
 
   @Get('addresses')

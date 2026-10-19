@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { haversineKm } from './geo';
+import { haversineKm, projectInRadius } from './geo';
 
 describe('haversineKm', () => {
   it('mesure ~1 km entre le Vieux-Port et la gare Saint-Charles', () => {
@@ -9,5 +9,18 @@ describe('haversineKm', () => {
   });
   it('vaut 0 pour un même point', () => {
     expect(haversineKm({ lat: 43.3, lng: 5.4 }, { lat: 43.3, lng: 5.4 })).toBe(0);
+  });
+});
+
+describe('projectInRadius', () => {
+  const c = { lat: 43.3, lng: 5.4 };
+  it('place le centre au milieu', () => {
+    expect(projectInRadius(c, 10, c)).toEqual({ x: 0.5, y: 0.5 });
+  });
+  it('place un point au nord-est en haut à droite, borné au cadre', () => {
+    const p = projectInRadius(c, 10, { lat: 43.35, lng: 5.45 });
+    expect(p.x).toBeGreaterThan(0.5);
+    expect(p.y).toBeLessThan(0.5);
+    expect(projectInRadius(c, 1, { lat: 44, lng: 4 })).toEqual({ x: 0, y: 0 });
   });
 });

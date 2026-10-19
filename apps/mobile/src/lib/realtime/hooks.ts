@@ -1,6 +1,9 @@
 import type { BookingDetailDto, ServerToClientEvents } from '@depano/schemas';
-import { useEffect, useRef } from 'react';
+import { skipToken, useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef } from 'react';
 import { useBooking } from '../query/hooks';
+import { qk } from '../query/keys';
+import { mergeDispatch, type DispatchProgress } from './dispatch';
 import { useRealtime } from './RealtimeProvider';
 
 /**
@@ -29,6 +32,12 @@ export function useRealtimeEvent<E extends keyof ServerToClientEvents>(event: E,
 export function useBookingLive(bookingId: string | undefined) {
   const { socket, connected } = useRealtime();
   const query = useBooking(bookingId, { refetchInterval: connected ? false : 15_000 });
+  // Progression du dispatch poussée par « booking.dispatch » (jamais refetchée), fusionnée au détail.
+  const live = useQuery<DispatchProgress | null>({
+    queryKey: qk.live.dispatch(bookingId ?? ''),
+    queryFn: skipToken,
+    meta: { persist: false },
+  });
 
   useEffect(() => {
     if (!socket || !connected || !bookingId) return;
@@ -38,5 +47,13 @@ export function useBookingLive(bookingId: string | undefined) {
     };
   }, [socket, connected, bookingId]);
 
-  return query as typeof query & { data: BookingDetailDto | undefined };
+  const detail = query.data;
+  const progress = live.data;
+  const data = useMemo(() => {
+    if (!detail) return detail;
+    const dispatch = mergeDispatch(detail.dispatch, progress);
+    return dispatch === detail.dispatch ? detail : { ...detail, dispatch };
+  }, [detail, progress]);
+
+  return { ...query, data } as typeof query & { data: BookingDetailDto | undefined };
 }

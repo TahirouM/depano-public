@@ -4,9 +4,10 @@ import { parisToUtc, parisParts, addDays } from './common/time';
 import { decrypt, encrypt, hmac } from './common/crypto';
 import { toApiError } from './common/error.filter';
 import { AppError } from './common/errors';
-import { domainsForApe } from './modules/artisan/artisan.service';
+import { domainsForApe, normalizeApe } from './modules/artisan/artisan.service';
 import { clientCancellationTerms, closingAmount } from './modules/bookings/booking-rules';
 import { NotFoundException } from '@nestjs/common';
+import { rateLimitFactor } from './infra/redis';
 
 describe('fuseau Europe/Paris', () => {
   it('convertit les heures locales (été / hiver)', () => {
@@ -52,6 +53,18 @@ describe('règles', () => {
     expect(domainsForApe('43.22B')).toEqual(['plomberie', 'energetique']);
     expect(domainsForApe('43.21A')).toEqual(['electricite']);
     expect(domainsForApe('62.01Z')).toEqual([]);
+    // Formats réels : SIRENE, sans point, répertoire des métiers, NAF 2025, minuscules / espaces, null
+    expect(domainsForApe('4322A')).toEqual(['plomberie', 'energetique']);
+    expect(domainsForApe('4322AZ')).toEqual(['plomberie', 'energetique']);
+    expect(domainsForApe('43.22G')).toEqual(['plomberie', 'energetique']);
+    expect(domainsForApe(' 43.22 b ')).toEqual(['plomberie', 'energetique']);
+    expect(domainsForApe('43.21.B')).toEqual(['electricite']);
+    expect(domainsForApe(null, undefined, '')).toEqual([]);
+    // Fusion de plusieurs codes (établissement + unité légale), ordre stable, sans doublon
+    expect(domainsForApe('43.21A', '43.22A', '4322AZ')).toEqual(['plomberie', 'electricite', 'energetique']);
+    expect(normalizeApe('4322AZ')).toBe('43.22A');
+    expect(normalizeApe('43.22A')).toBe('43.22A');
+    expect(normalizeApe('abc')).toBeNull();
   });
 
   const base = {
@@ -78,5 +91,15 @@ describe('règles', () => {
     expect(closingAmount(base, 16000)).toBe(14500);
     expect(closingAmount({ ...base, authorizedCents: 20000 }, 16000)).toBe(16000);
     expect(closingAmount({ ...base, travelOnly: true }, null)).toBe(2500);
+  });
+});
+
+describe('limitation de débit', () => {
+  it('garde les valeurs de production, multiplie ou désactive hors production', () => {
+    expect(rateLimitFactor({ NODE_ENV: 'production', RATE_LIMIT_DISABLED: true, RATE_LIMIT_MULTIPLIER: 50 })).toBe(1);
+    expect(rateLimitFactor({ NODE_ENV: 'development', RATE_LIMIT_DISABLED: false, RATE_LIMIT_MULTIPLIER: undefined })).toBe(20);
+    expect(rateLimitFactor({ NODE_ENV: 'development', RATE_LIMIT_DISABLED: false, RATE_LIMIT_MULTIPLIER: 5 })).toBe(5);
+    expect(rateLimitFactor({ NODE_ENV: 'development', RATE_LIMIT_DISABLED: true, RATE_LIMIT_MULTIPLIER: undefined })).toBe(Infinity);
+    expect(rateLimitFactor({ NODE_ENV: 'test', RATE_LIMIT_DISABLED: false, RATE_LIMIT_MULTIPLIER: undefined })).toBe(1);
   });
 });

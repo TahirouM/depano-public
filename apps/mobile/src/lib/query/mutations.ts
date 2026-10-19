@@ -27,7 +27,13 @@ export function registerMutationDefaults(qc: QueryClient) {
         fileId = up.fileId;
         useOutboxStore.getState().update(v.conversationId, v.clientId, { fileId });
       }
-      return api.chat.send(v.conversationId, { clientId: v.clientId, kind: v.kind, body: v.body, fileId });
+      return api.chat.send(v.conversationId, {
+        clientId: v.clientId,
+        kind: v.kind,
+        body: v.body,
+        fileId,
+        ...(v.kind === 'voice' && v.durationMs != null ? { durationMs: Math.round(v.durationMs) } : {}),
+      });
     },
     onMutate: (v: SendMessageVars) => {
       useOutboxStore.getState().upsert({ ...v, status: 'pending' });

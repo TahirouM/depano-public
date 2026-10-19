@@ -59,7 +59,13 @@ export function SiretStep() {
       patch({
         siret: info.siret,
         company: info,
-        domains: draft.domains?.length ? draft.domains : info.suggestedDomains,
+        // Nouveau SIRET : on repart des métiers suggérés par l'APE ; même SIRET : on y ajoute les choix déjà faits.
+        domains: [
+          ...new Set([
+            ...info.suggestedDomains,
+            ...(draft.siret === info.siret ? (draft.domains ?? []) : []),
+          ]),
+        ],
         city: draft.city ?? info.city ?? undefined,
       });
       void qc.invalidateQueries({ queryKey: qk.artisan.profile });

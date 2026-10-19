@@ -1,8 +1,10 @@
 import {
   ApiError,
   formatEuros,
+  isCompletionCodeErrorDetails,
   RULES,
   type ArtisanDashboardDto,
+  type CompletionCodeErrorDetails,
   type BookingDetailDto,
 } from '@depano/schemas';
 import {
@@ -59,12 +61,12 @@ function CodeForm({ b }: { b: BookingDetailDto }) {
     onError: (e) => {
       haptic('error');
       setCode('');
-      const d =
-        e instanceof ApiError ? (e.details as { attemptsLeft?: number } | undefined) : undefined;
+      const d: CompletionCodeErrorDetails | undefined =
+        e instanceof ApiError && isCompletionCodeErrorDetails(e.details) ? e.details : undefined;
       if (e instanceof ApiError && (e.status === 423 || e.code === 'code_locked')) {
         setLocked(true);
         setLeft(0);
-      } else if (d?.attemptsLeft != null) setLeft(d.attemptsLeft);
+      } else if (d) setLeft(d.attemptsLeft);
       setError(errorMessage(e));
     },
   });

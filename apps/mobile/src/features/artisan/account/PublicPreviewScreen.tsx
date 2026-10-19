@@ -49,6 +49,8 @@ function toCard(
     ratingAvg: rating.avg,
     ratingCount: rating.count,
     distanceKm: null,
+    approxLat: p.baseLat != null ? Math.round(p.baseLat * 100) / 100 : null,
+    approxLng: p.baseLng != null ? Math.round(p.baseLng * 100) / 100 : null,
     fromPriceCents: p.services.length ? Math.min(...p.services.map((s) => s.priceCents)) : null,
     urgentAvailable: p.urgentAvailable,
     nextSlotAt: null,

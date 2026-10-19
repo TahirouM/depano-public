@@ -156,6 +156,45 @@ export const PushTokenBody = z.object({
 });
 export type PushTokenBody = z.infer<typeof PushTokenBody>;
 
+/** Préférences de notifications push (les notifications in-app sont toujours conservées). */
+export const NotificationPrefs = z.object({
+  /** Acceptation, artisan en route, devis, fin, avis… */
+  bookingUpdates: z.boolean(),
+  messages: z.boolean(),
+  /** La veille et 1 h avant un rendez-vous. */
+  reminders: z.boolean(),
+  marketing: z.boolean(),
+});
+export type NotificationPrefs = z.infer<typeof NotificationPrefs>;
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { bookingUpdates: true, messages: true, reminders: true, marketing: false };
+/** PUT /me/notification-preferences : mise à jour partielle, renvoie les préférences complètes. */
+export const NotificationPrefsBody = NotificationPrefs.partial().strict();
+export type NotificationPrefsBody = z.infer<typeof NotificationPrefsBody>;
+
+/**
+ * Catégorie de préférence d'un type de notification. null : toujours envoyée en push (urgences artisan,
+ * compte, documents, virements).
+ */
+export function notificationPrefCategory(type: NotificationType | string | undefined): keyof NotificationPrefs | null {
+  switch (type) {
+    case 'booking_created':
+    case 'booking_accepted':
+    case 'booking_status':
+    case 'booking_cancelled':
+    case 'booking_expired':
+    case 'quote_received':
+    case 'quote_answered':
+    case 'review_received':
+      return 'bookingUpdates';
+    case 'message':
+      return 'messages';
+    case 'reminder':
+      return 'reminders';
+    default:
+      return null;
+  }
+}
+
 export const AddressBody = z.object({
   label: z.string().max(40).default('Domicile'),
   line1: z.string().min(3).max(200),
@@ -248,6 +287,12 @@ export interface ArtisanCardDto {
   ratingAvg: number | null;
   ratingCount: number;
   distanceKm: number | null;
+  /**
+   * Position de base approchée (arrondie à 2 décimales, ≈ 1 km) pour la carte de recherche :
+   * jamais l'adresse exacte de l'artisan. null si la zone n'est pas renseignée.
+   */
+  approxLat: number | null;
+  approxLng: number | null;
   fromPriceCents: number | null;
   urgentAvailable: boolean;
   nextSlotAt: string | null;
@@ -536,6 +581,20 @@ export type ReportBody = z.infer<typeof ReportBody>;
 export const CompleteBody = z.object({ code: z.string().regex(/^\d{4}$/) });
 export type CompleteBody = z.infer<typeof CompleteBody>;
 
+/**
+ * `details` de l'erreur renvoyée par `POST /bookings/:id/complete` :
+ * 400 `code_invalid` (essais restants ≥ 1) ou 423 `code_locked` (`attemptsLeft: 0`, support alerté).
+ * Même forme pour 400 `otp_invalid` à la vérification OTP.
+ */
+export interface CompletionCodeErrorDetails {
+  attemptsLeft: number;
+}
+
+/** Garde de type sur `ApiError.details` (valeur inconnue côté client). */
+export function isCompletionCodeErrorDetails(d: unknown): d is CompletionCodeErrorDetails {
+  return typeof d === 'object' && d !== null && typeof (d as { attemptsLeft?: unknown }).attemptsLeft === 'number';
+}
+
 export const LocationBody = z.object({
   lat: Latitude,
   lng: Longitude,
@@ -820,6 +879,8 @@ export interface MessageDto {
   kind: 'text' | 'image' | 'voice' | 'system';
   body: string | null;
   fileUrl: string | null;
+  /** Durée d'un message vocal (ms), null sinon ou si inconnue. */
+  durationMs?: number | null;
   /** Identifiant généré côté app pour l'optimistic UI et l'idempotence. */
   clientId: string | null;
   createdAt: string;
@@ -832,6 +893,8 @@ export const SendMessageBody = z
     kind: z.enum(['text', 'image', 'voice']).default('text'),
     body: z.string().max(4000).optional(),
     fileId: Uuid.optional(),
+    /** Messages vocaux : durée d'enregistrement (ms, 10 min max). Ignorée pour les autres types. */
+    durationMs: z.number().int().min(0).max(600_000).optional(),
   })
   .refine((v) => (v.kind === 'text' ? !!v.body?.trim() : !!v.fileId), 'Message vide');
 export type SendMessageBody = z.infer<typeof SendMessageBody>;

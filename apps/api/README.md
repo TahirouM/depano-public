@@ -107,6 +107,8 @@ Lues depuis le `.env` racine (voir `.env.example`) ; valeurs par défaut adapté
 | `TWILIO_PROXY_SERVICE_SID` | si défini, relais d'appel Twilio Proxy ; sinon numéro factice |
 | `PUSH_PROVIDER` | `console` ou `expo` (`EXPO_ACCESS_TOKEN` optionnel) |
 | `OFFLINE_MODE` | `true` : pas d'appel aux API publiques (adresse, SIRET) — utilisé en test |
+| `RATE_LIMIT_MULTIPLIER` | hors production : coefficient des plafonds de débit (défaut ×20 en `development`, ×1 en `test`) ; le délai entre deux OTP est divisé d'autant. Ignoré en production |
+| `RATE_LIMIT_DISABLED` | hors production : `true` désactive toute limitation de débit (OTP, réservations, appels, envois). Ignoré en production |
 
 ## Files BullMQ (worker)
 

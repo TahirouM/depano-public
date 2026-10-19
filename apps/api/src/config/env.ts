@@ -59,6 +59,10 @@ const EnvSchema = z.object({
   EXPO_ACCESS_TOKEN: z.string().optional().default(''),
   /** Désactive les appels réseau sortants (API adresse, SIRET) : utile en test. */
   OFFLINE_MODE: bool,
+  /** Hors production : désactive toute limitation de débit (ignoré en production). */
+  RATE_LIMIT_DISABLED: bool,
+  /** Hors production : multiplie les plafonds (défaut 20 en développement, 1 en test ; ignoré en production). */
+  RATE_LIMIT_MULTIPLIER: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.coerce.number().positive().optional()),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 

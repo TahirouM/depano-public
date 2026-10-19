@@ -10,6 +10,7 @@ import { DbConnection } from '../src/infra/db';
 import { RedisConnection } from '../src/infra/redis';
 import { createProcessors, type Processor } from '../src/worker/processors';
 import { ApiExceptionFilter } from '../src/common/error.filter';
+import { configureHttpApp } from '../src/http';
 
 export interface RecordedJob {
   queue: QueueName;
@@ -73,7 +74,7 @@ export async function createTestApp(): Promise<TestContext> {
     .useValue(realtime)
     .compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter(), { rawBody: true, logger: ['error'] });
-  app.setGlobalPrefix('v1');
+  configureHttpApp(app);
   app.useGlobalFilters(new ApiExceptionFilter());
   await app.init();
   await app.getHttpAdapter().getInstance().ready();

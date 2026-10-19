@@ -125,6 +125,12 @@ export class ArtisanController {
   }
 
   @ArtisanOnly({ approved: true })
+  @Get('offers/:id')
+  offer(@CurrentArtisan() a: ArtisanContext, @IdParam() id: string) {
+    return this.dispatch.getOffer(a.id, id);
+  }
+
+  @ArtisanOnly({ approved: true })
   @Post('offers/:id/accept')
   @HttpCode(200)
   accept(@CurrentArtisan() a: ArtisanContext, @IdParam() id: string) {

@@ -50,6 +50,8 @@ interface Row {
   kind: MessageDto['kind'];
   text: string | null;
   uri: string | null;
+  /** Messages vocaux : durée (serveur ou enregistrement local). */
+  durationMs?: number | null;
   createdAt: string;
   status?: ChatDeliveryStatus;
   outbox?: OutboxMessage;
@@ -142,6 +144,7 @@ function ChatInner({ conversationId, as }: { conversationId: string; as: 'client
         kind: m.kind,
         text: m.body,
         uri: m.fileUrl,
+        durationMs: m.durationMs ?? null,
         createdAt: m.createdAt,
         status: mine ? (m.readAt ? 'read' : 'sent') : undefined,
       });
@@ -150,7 +153,7 @@ function ChatInner({ conversationId, as }: { conversationId: string; as: 'client
       if (serverClientIds.has(o.clientId)) continue;
       const inFlight = activeClientIds.includes(o.clientId);
       const status: ChatDeliveryStatus = o.status === 'failed' || !inFlight ? 'failed' : online ? 'sending' : 'queued';
-      list.push({ key: `local-${o.clientId}`, mine: true, kind: o.kind, text: o.body ?? null, uri: o.localUri ?? null, createdAt: o.createdAt, status, outbox: o });
+      list.push({ key: `local-${o.clientId}`, mine: true, kind: o.kind, text: o.body ?? null, uri: o.localUri ?? null, durationMs: o.durationMs ?? null, createdAt: o.createdAt, status, outbox: o });
     }
     list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     // Séparateurs de jour (liste inversée : le libellé va sur le dernier message de chaque jour).
@@ -280,7 +283,7 @@ function ChatInner({ conversationId, as }: { conversationId: string; as: 'client
                   imageUri={r.kind === 'image' ? r.uri : null}
                   voice={
                     r.kind === 'voice'
-                      ? { playing: playingKey === r.key && playerStatus.playing, onToggle: () => toggleVoice(r.key, r.uri), durationLabel: r.outbox?.durationMs ? `${Math.round(r.outbox.durationMs / 1000)} s` : undefined }
+                      ? { playing: playingKey === r.key && playerStatus.playing, onToggle: () => toggleVoice(r.key, r.uri), durationMs: r.durationMs }
                       : undefined
                   }
                   createdAt={r.createdAt}

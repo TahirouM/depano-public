@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canTransition, nextStatuses } from './booking-machine';
+import { canTransition, clientDisputeBlockedReason, nextStatuses } from './booking-machine';
 import { Phone } from './dto';
 import { clientCancellationIsFree, computeCommission, computePrice, quoteNeedsNewAuthorization } from './rules';
 
@@ -56,5 +56,17 @@ describe('phone', () => {
   it('normalises French mobile numbers', () => {
     expect(Phone.parse('06 12 34 56 78')).toBe('+33612345678');
     expect(() => Phone.parse('1234')).toThrow();
+  });
+});
+
+describe('clientDisputeBlockedReason', () => {
+  const now = new Date('2026-10-20T10:00:00Z');
+  it('blocks a dispute on a future scheduled appointment', () => {
+    expect(clientDisputeBlockedReason({ status: 'accepted', scheduledAt: '2026-10-21T08:00:00Z' }, now)).toMatch(/pas encore eu lieu/);
+  });
+  it('allows it once the appointment time has passed or the artisan is on the way', () => {
+    expect(clientDisputeBlockedReason({ status: 'accepted', scheduledAt: new Date('2026-10-20T09:00:00Z') }, now)).toBeNull();
+    expect(clientDisputeBlockedReason({ status: 'en_route', scheduledAt: '2026-10-21T08:00:00Z' }, now)).toBeNull();
+    expect(clientDisputeBlockedReason({ status: 'accepted', scheduledAt: null }, now)).toBeNull();
   });
 });

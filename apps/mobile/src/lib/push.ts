@@ -56,6 +56,18 @@ export async function registerPushTokenIfGranted(): Promise<void> {
   }
 }
 
+/** Déconnexion : retire le jeton de cet appareil côté API (avant de révoquer la session). Sans effet s'il n'y en a pas. */
+export async function unregisterPushToken(): Promise<void> {
+  const saved = useAppStore.getState().pushToken;
+  const userId = useAuthStore.getState().userId;
+  if (!saved || saved.userId !== userId) return;
+  try {
+    await api.me.unregisterPushToken(saved.token);
+  } catch (e) {
+    if (__DEV__) console.info('[push] désinscription impossible :', (e as Error).message);
+  }
+}
+
 function linkFromResponse(r: Notifications.NotificationResponse | null | undefined): string | null {
   const data = r?.notification.request.content.data as Record<string, unknown> | undefined;
   const link = data?.link ?? data?.url;

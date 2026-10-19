@@ -96,6 +96,10 @@ export function createApiClient(opts: ApiClientOptions) {
       exportData: () => get<Record<string, unknown>>('/me/export'),
       badges: () => get<D.BadgesDto>('/me/badges'),
       registerPushToken: (b: D.PushTokenBody) => post<void>('/me/push-tokens', b),
+      /** À appeler avant la déconnexion (jeton d'accès encore valide). */
+      unregisterPushToken: (token: string) => del(`/me/push-tokens/${encodeURIComponent(token)}`),
+      notificationPrefs: () => get<D.NotificationPrefs>('/me/notification-preferences'),
+      updateNotificationPrefs: (b: D.NotificationPrefsBody) => put<D.NotificationPrefs>('/me/notification-preferences', b),
       addresses: () => get<D.AddressDto[]>('/me/addresses'),
       createAddress: (b: In<typeof D.AddressBody>) => post<D.AddressDto>('/me/addresses', b),
       updateAddress: (id: string, b: Partial<In<typeof D.AddressBody>>) => patch<D.AddressDto>(`/me/addresses/${id}`, b),
@@ -155,6 +159,8 @@ export function createApiClient(opts: ApiClientOptions) {
       dashboard: () => get<D.ArtisanDashboardDto>('/artisan/dashboard'),
       planning: (q: { from: string; to: string }) => get<D.PlanningDto>('/artisan/planning', q),
       offers: () => get<D.UrgentOfferDto[]>('/artisan/offers'),
+      /** Une offre de l'artisan connecté, quel que soit son statut. */
+      offer: (id: string) => get<D.UrgentOfferDto>(`/artisan/offers/${id}`),
       acceptOffer: (id: string) => post<D.BookingDetailDto>(`/artisan/offers/${id}/accept`),
       declineOffer: (id: string) => post<void>(`/artisan/offers/${id}/decline`),
       earnings: () => get<D.EarningsDto>('/artisan/earnings'),

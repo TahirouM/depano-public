@@ -16,16 +16,16 @@ import {
 } from '@depano/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { router, Stack } from 'expo-router';
+import { Redirect, router, Stack } from 'expo-router';
 import { Check, Clock, MapPin, UserX, X } from 'lucide-react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { api, errorMessage, isNetworkError } from '@/lib/api';
 import { qk } from '@/lib/query/keys';
 import { useRealtimeEvent } from '@/lib/realtime/hooks';
 import { CountdownRing } from '../components/CountdownRing';
 import { useCountdown } from '../components/OfferCard';
-import { findCachedOffer, setBookingDetail, useOffers } from '../queries';
+import { setBookingDetail, useOffer } from '../queries';
 
 type Gone = 'taken' | 'expired' | 'cancelled' | 'declined' | null;
 
@@ -59,10 +59,9 @@ export function OfferScreen({ offerId }: { offerId: string }) {
   const t = useTheme();
   const qc = useQueryClient();
   const toast = useToast();
-  const offers = useOffers();
+  const query = useOffer(offerId);
   const [gone, setGone] = useState<Gone>(null);
-  const cached = useMemo(() => findCachedOffer(qc, offerId), [qc, offerId, offers.data]); // eslint-disable-line react-hooks/exhaustive-deps
-  const offer: UrgentOfferDto | undefined = offers.data?.find((o) => o.id === offerId) ?? cached;
+  const offer: UrgentOfferDto | undefined = query.data;
   const left = useCountdown(offer?.expiresAt);
   const buzzed = useRef(false);
 
@@ -78,6 +77,7 @@ export function OfferScreen({ offerId }: { offerId: string }) {
     if (e.offerId === offerId || (offer && e.bookingId === offer.bookingId)) {
       haptic('error');
       setGone(e.reason);
+      void qc.invalidateQueries({ queryKey: qk.artisan.offer(offerId) });
     }
   });
 
@@ -124,8 +124,15 @@ export function OfferScreen({ offerId }: { offerId: string }) {
     />
   );
 
+  // Offre déjà acceptée par cet artisan (réouverture depuis la notification) : on file vers l'intervention.
+  if (!gone && offer?.status === 'accepted' && !accept.isPending) {
+    return <Redirect href={{ pathname: '/pro/interventions/[id]', params: { id: offer.bookingId } }} />;
+  }
+
   if (gone || (offer && offer.status !== 'pending')) {
-    const g = GONE_COPY[gone ?? (offer?.status === 'taken' ? 'taken' : 'expired')];
+    const fromStatus: Exclude<Gone, null> =
+      offer?.status === 'taken' || offer?.status === 'declined' ? offer.status : 'expired';
+    const g = GONE_COPY[gone ?? fromStatus];
     return (
       <Screen
         footer={
@@ -150,19 +157,20 @@ export function OfferScreen({ offerId }: { offerId: string }) {
   }
 
   if (!offer) {
-    if (offers.isError) {
+    const notFound = query.error instanceof ApiError && (query.error.status === 404 || query.error.status === 403);
+    if (query.isError && !notFound) {
       return (
         <Screen>
           {header}
           <ErrorState
-            offline={isNetworkError(offers.error)}
-            message={errorMessage(offers.error)}
-            onRetry={() => void offers.refetch()}
+            offline={isNetworkError(query.error)}
+            message={errorMessage(query.error)}
+            onRetry={() => void query.refetch()}
           />
         </Screen>
       );
     }
-    if (offers.isPending || offers.isFetching) {
+    if (query.isPending || (query.isFetching && !query.isError)) {
       return (
         <Screen>
           {header}

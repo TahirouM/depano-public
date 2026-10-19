@@ -2,7 +2,7 @@ import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { Check, CheckCheck, Clock, CircleAlert, Pause, Play } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import { MIN_TOUCH } from '../tokens/scale';
-import { formatTime } from '../utils/format';
+import { formatTime, formatVoiceDuration } from '../utils/format';
 import { Icon } from './Icon';
 import { Text } from './Text';
 
@@ -13,7 +13,8 @@ export interface ChatBubbleProps {
   kind: 'text' | 'image' | 'voice' | 'system';
   text?: string | null;
   imageUri?: string | null;
-  voice?: { playing: boolean; onToggle: () => void; durationLabel?: string };
+  /** `durationMs` (MessageDto.durationMs) est formaté en m:ss si `durationLabel` n'est pas fourni. */
+  voice?: { playing: boolean; onToggle: () => void; durationLabel?: string; durationMs?: number | null };
   createdAt: string;
   status?: ChatDeliveryStatus;
   onRetry?: () => void;
@@ -42,10 +43,11 @@ export function ChatBubble({ mine, kind, text, imageUri, voice, createdAt, statu
   const bg = mine ? t.colors.brand.primary : t.colors.background.surface;
   const fg = mine ? t.colors.brand.onPrimary : t.colors.text.primary;
   const failed = status === 'failed';
+  const voiceDuration = voice ? (voice.durationLabel ?? formatVoiceDuration(voice.durationMs)) : null;
   const StatusIcon = status === 'read' ? CheckCheck : status === 'sent' ? Check : status === 'failed' ? CircleAlert : Clock;
   const a11y = [
     mine ? 'Vous' : 'Interlocuteur',
-    kind === 'image' ? 'photo' : kind === 'voice' ? 'message vocal' : text,
+    kind === 'image' ? 'photo' : kind === 'voice' ? `message vocal${voiceDuration ? ` de ${voiceDuration}` : ''}` : text,
     formatTime(createdAt),
     mine && status ? STATUS_LABEL[status] : null,
   ]
@@ -85,9 +87,9 @@ export function ChatBubble({ mine, kind, text, imageUri, voice, createdAt, statu
           >
             <Icon icon={voice.playing ? Pause : Play} color={fg} />
             <View style={[styles.wave, { backgroundColor: fg, opacity: 0.4 }]} />
-            {voice.durationLabel ? (
-              <Text variant="caption" color={fg}>
-                {voice.durationLabel}
+            {voiceDuration ? (
+              <Text variant="caption" color={fg} style={{ fontVariant: ['tabular-nums'] }}>
+                {voiceDuration}
               </Text>
             ) : null}
           </Pressable>

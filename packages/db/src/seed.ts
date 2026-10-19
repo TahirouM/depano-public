@@ -42,6 +42,22 @@ const ARTISANS = [
   { first: 'Lucas', last: 'Moreau', company: 'LM Électricité', phone: '+33600000106', domains: ['electricite'], city: 'Marseille 13e', lat: 43.3486, lng: 5.4339, rating: 4.5, count: 23, urgent: true, quals: [] },
 ];
 
+/** Avis de démo (rotation) : de vrais avis rattachés à des interventions clôturées. */
+const REVIEW_POOL: { rating: number; tags: string[]; comment: string }[] = [
+  { rating: 5, tags: ['Ponctuel', 'Travail soigné'], comment: 'Arrivé en 25 minutes, fuite réparée proprement. Devis clair avant de commencer, rien à redire.' },
+  { rating: 5, tags: ['Bon conseil', 'Prix respecté'], comment: 'Très pédagogue, il a pris le temps d’expliquer la panne. Prix conforme au devis.' },
+  { rating: 4, tags: ['Ponctuel'], comment: 'Intervention efficace. Un peu de retard mais il a prévenu par message.' },
+  { rating: 5, tags: ['Travail soigné', 'Sympathique'], comment: 'Chantier laissé propre, je recommande sans hésiter.' },
+  { rating: 4, tags: ['Prix respecté'], comment: 'Bon travail, pièce remplacée le jour même.' },
+];
+const REVIEWERS = [
+  { phone: '+33600000020', first: 'Léa', last: 'Fabre', line1: '8 boulevard Longchamp', postalCode: '13001', lat: 43.3035, lng: 5.3925 },
+  { phone: '+33600000021', first: 'Marc', last: 'Olivier', line1: '45 rue de Rome', postalCode: '13006', lat: 43.2905, lng: 5.3796 },
+  { phone: '+33600000022', first: 'Inès', last: 'Belkacem', line1: '3 avenue du Prado', postalCode: '13008', lat: 43.2752, lng: 5.3897 },
+];
+const DAY = 86_400_000;
+const ref = (i: number, j: number) => `DEP-R${i}${j}${Math.random().toString(36).slice(2, 5).toUpperCase().padEnd(3, 'X')}`;
+
 async function main() {
   const { db, close } = createDb(process.env.DATABASE_URL, { max: 1 });
 
@@ -88,7 +104,22 @@ async function main() {
     .values({ phone: '+33600000010', phoneVerifiedAt: new Date(), firstName: 'Camille', lastName: 'Durand', email: 'camille@example.fr', roles: ['client'] })
     .returning();
   await db.insert(s.clientProfiles).values({ userId: client!.id, referralCode: 'CAMILLE10' });
-  await db.insert(s.addresses).values({ userId: client!.id, label: 'Domicile', line1: '12 rue Paradis', postalCode: '13001', city: 'Marseille', floor: '3e', doorCode: 'A1234', lat: 43.2951, lng: 5.3772, isDefault: true });
+  const [clientAddr] = await db
+    .insert(s.addresses)
+    .values({ userId: client!.id, label: 'Domicile', line1: '12 rue Paradis', postalCode: '13001', city: 'Marseille', floor: '3e', doorCode: 'A1234', lat: 43.2951, lng: 5.3772, isDefault: true })
+    .returning();
+
+  // Clients de démo auteurs d'avis (Camille + 3 voisins), chacun avec son adresse.
+  const authors: { userId: string; addressId: string }[] = [{ userId: client!.id, addressId: clientAddr!.id }];
+  for (const r of REVIEWERS) {
+    const [u] = await db.insert(s.users).values({ phone: r.phone, phoneVerifiedAt: new Date(), firstName: r.first, lastName: r.last, roles: ['client'] }).returning();
+    const [addr] = await db
+      .insert(s.addresses)
+      .values({ userId: u!.id, label: 'Domicile', line1: r.line1, postalCode: r.postalCode, city: 'Marseille', lat: r.lat, lng: r.lng, isDefault: true })
+      .returning();
+    authors.push({ userId: u!.id, addressId: addr!.id });
+  }
+  let reviewCount = 0;
 
   for (const a of ARTISANS) {
     const [u] = await db
@@ -139,6 +170,57 @@ async function main() {
         { artisanId: p!.id, weekday, startTime: '14:00', endTime: '19:00' },
       ]).concat([{ artisanId: p!.id, weekday: 6, startTime: '09:00', endTime: '13:00' }]),
     );
+    // Interventions clôturées + avis réels (une par auteur). Les agrégats ratingAvg / ratingCount ci-dessus
+    // représentent l'historique complet (ces avis en font partie) : la note évolue ensuite de façon incrémentale.
+    const ai = ARTISANS.indexOf(a);
+    for (const [j, author] of authors.entries()) {
+      const sv = mine.find((x) => x.domain === a.domains[j % a.domains.length]) ?? mine[0]!;
+      const review = REVIEW_POOL[(ai + j) % REVIEW_POOL.length]!;
+      const closedAt = new Date(Date.now() - (4 + j * 9 + ai) * DAY);
+      const scheduledAt = new Date(closedAt.getTime() - 2 * 3600_000);
+      const total = sv.referencePriceCents + 2500;
+      const [b] = await db
+        .insert(s.bookings)
+        .values({
+          reference: ref(ai, j),
+          kind: 'scheduled',
+          status: 'closed',
+          clientId: author.userId,
+          artisanId: p!.id,
+          domain: sv.domain,
+          serviceId: sv.id,
+          scheduledType: sv.kind === 'maintenance' ? 'maintenance' : 'repair',
+          addressId: author.addressId,
+          problemReason: sv.name.slice(0, 120),
+          scheduledAt,
+          endsAt: new Date(scheduledAt.getTime() + sv.defaultDurationMinutes * 60_000),
+          basePriceCents: sv.referencePriceCents,
+          travelFeeCents: 2500,
+          totalCents: total,
+          authorizedCents: total,
+          capturedCents: total,
+          commissionRate: 0.15,
+          commissionCents: Math.round(total * 0.15),
+          acceptedAt: new Date(scheduledAt.getTime() - 3 * DAY),
+          arrivedAt: scheduledAt,
+          workDoneAt: new Date(closedAt.getTime() - 5 * 60_000),
+          closedAt,
+          createdAt: new Date(scheduledAt.getTime() - 3 * DAY),
+        })
+        .returning();
+      await db.insert(s.conversations).values({ bookingId: b!.id, clientUserId: author.userId, artisanUserId: u!.id });
+      await db.insert(s.reviews).values({
+        bookingId: b!.id,
+        artisanId: p!.id,
+        authorId: author.userId,
+        rating: review.rating,
+        tags: review.tags,
+        comment: review.comment,
+        createdAt: new Date(closedAt.getTime() + 3600_000),
+        ...(j === 0 ? { replyBody: `Merci pour votre confiance ! ${a.first}`, replyAt: new Date(closedAt.getTime() + 5 * 3600_000) } : {}),
+      });
+      reviewCount++;
+    }
   }
 
   // Un artisan en cours de vérification, pour le back-office
@@ -151,7 +233,7 @@ async function main() {
     displayName: 'Mehdi S.', domains: ['plomberie'], baseLat: 43.28, baseLng: 5.36, baseCity: 'Marseille 6e', submittedAt: new Date(),
   });
 
-  console.log(`✔ seed : ${serviceRows.length} prestations, ${ARTISANS.length + 1} artisans, client ${client!.phone}, admin ${admin!.phone}`);
+  console.log(`✔ seed : ${serviceRows.length} prestations, ${ARTISANS.length + 1} artisans, ${reviewCount} avis, client ${client!.phone}, admin ${admin!.phone}`);
   await close();
 }
 

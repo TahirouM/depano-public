@@ -73,6 +73,24 @@ describe('Rendez-vous planifiés, créneaux et annulation', () => {
     expect([x.status, y.status].sort()).toEqual([201, 409]);
   });
 
+  it('litige refusé avant l’heure du RDV, possible ensuite', async () => {
+    const r = await book(clientA, await slotIn(2));
+    const id = r.body.booking.id as string;
+    const c = await call(ctx, 'POST', `/bookings/${id}/confirm-payment`, { token: clientA });
+    expect(c.body.status).toBe('accepted');
+    expect(c.body.allowedTransitions).not.toContain('disputed');
+    const early = await call(ctx, 'POST', `/bookings/${id}/dispute`, { token: clientA, body: { reason: 'never_came' } });
+    expect(early.status).toBe(409);
+    expect(early.body.code).toBe('dispute_too_early');
+    expect(early.body.message).toMatch(/pas encore eu lieu/);
+    // L'heure du RDV est passée (artisan en retard) : le litige est possible.
+    await ctx.db.update(s.bookings).set({ scheduledAt: new Date(Date.now() - 30 * 60_000) }).where(eq(s.bookings.id, id));
+    expect((await call(ctx, 'GET', `/bookings/${id}`, { token: clientA })).body.allowedTransitions).toContain('disputed');
+    const late = await call(ctx, 'POST', `/bookings/${id}/dispute`, { token: clientA, body: { reason: 'never_came' } });
+    expect(late.status).toBe(200);
+    expect(late.body.status).toBe('disputed');
+  });
+
   it('RDV lointain : SetupIntent puis autorisation 24 h avant', async () => {
     const at = await slotIn(10);
     const r = await book(clientA, at);

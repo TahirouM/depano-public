@@ -1,5 +1,6 @@
 import { DOMAIN_CODES, DomainCode, formatEuros, type ArtisanCardDto, type ArtisanSearchQuery } from '@depano/schemas';
 import {
+  ArtisanCard,
   BottomSheet,
   Button,
   Chip,
@@ -20,8 +21,8 @@ import { FlatList, View } from 'react-native';
 import { QueryView } from '@/components/QueryView';
 import { useIsSignedIn } from '@/lib/query/hooks';
 import { useRequireAuth } from '@/lib/useRequireAuth';
-import { FavoriteArtisanCard } from '../components/FavoriteArtisanCard';
 import { LiveMap } from '../map/LiveMap';
+import type { MapMarker } from '../map/types';
 import { useArtisanSearchInfinite, useDebounced, useFavorites, useToggleFavorite } from '../queries';
 import { useSearchOrigin } from '../useSearchOrigin';
 
@@ -75,6 +76,25 @@ export function SearchScreen() {
   };
 
   const items = results.data?.pages.flatMap((p) => p.items) ?? [];
+  const markers = useMemo<MapMarker[]>(
+    () =>
+      items
+        .filter((a) => a.approxLat != null && a.approxLng != null)
+        .map((a) => ({
+          id: a.id,
+          lat: a.approxLat!,
+          lng: a.approxLng!,
+          title: a.displayName,
+          description: [
+            a.ratingAvg != null ? `${String(a.ratingAvg).replace('.', ',')} ★ (${a.ratingCount})` : null,
+            a.fromPriceCents != null ? `dès ${formatEuros(a.fromPriceCents)}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          onPress: () => router.push({ pathname: '/artisan/[id]', params: { id: a.id } }),
+        })),
+    [results.data], // eslint-disable-line react-hooks/exhaustive-deps -- `items` dérive de results.data
+  );
   const sorted = view === 'map' ? [...items].sort((a, b) => (a.distanceKm ?? 99) - (b.distanceKm ?? 99)) : items;
 
   return (
@@ -151,7 +171,13 @@ export function SearchScreen() {
             ListHeaderComponent={
               view === 'map' ? (
                 <View style={{ gap: t.spacing.sm, marginBottom: t.spacing.sm }}>
-                  <LiveMap center={origin} radiusKm={20} height={240} accessibilityLabel={`Carte de la zone de recherche, ${items.length} artisans dans un rayon de 20 km`} />
+                  <LiveMap
+                    center={origin}
+                    radiusKm={20}
+                    height={240}
+                    markers={markers}
+                    accessibilityLabel={`Carte de la zone de recherche, ${markers.length} artisans dans un rayon de 20 km`}
+                  />
                   <Text variant="callout" tone="secondary">
                     Classés du plus proche au plus éloigné · {origin.label}
                   </Text>
@@ -164,7 +190,7 @@ export function SearchScreen() {
             }
             ListFooterComponent={results.isFetchingNextPage ? <SkeletonList count={1} /> : undefined}
             renderItem={({ item }) => (
-              <FavoriteArtisanCard
+              <ArtisanCard
                 artisan={item}
                 onPress={() => router.push({ pathname: '/artisan/[id]', params: { id: item.id } })}
                 favorite={signedIn ? favIds.has(item.id) : false}

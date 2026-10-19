@@ -76,13 +76,23 @@ export class ReviewsService {
       throw conflict('review_window_closed', `Les avis sont ouverts ${RULES.reviewWindowDays} jours après l'intervention.`);
     }
     await this.filesService.assertOwned(userId, body.photoFileIds, ['review', 'problem_photo']);
-    const inserted = await this.conn.db
-      .insert(reviews)
-      .values({ bookingId: b.id, artisanId: b.artisanId, authorId: userId, rating: body.rating, tags: body.tags, comment: body.comment ?? null, photoFileIds: body.photoFileIds })
-      .onConflictDoNothing({ target: reviews.bookingId })
-      .returning();
+    // Insertion et mise à jour incrémentale de la note dans la même transaction : les agrégats existants
+    // (historique importé, avis antérieurs) sont conservés — on n'écrase jamais par un recalcul partiel.
+    const inserted = await this.conn.db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(reviews)
+        .values({ bookingId: b.id, artisanId: b.artisanId!, authorId: userId, rating: body.rating, tags: body.tags, comment: body.comment ?? null, photoFileIds: body.photoFileIds })
+        .onConflictDoNothing({ target: reviews.bookingId })
+        .returning();
+      if (!rows.length) return rows;
+      await tx.execute(sql`
+        update artisan_profiles set
+          rating_avg = ((coalesce(rating_avg, 0) * rating_count + ${body.rating}) / (rating_count + 1))::real,
+          rating_count = rating_count + 1
+        where id = ${b.artisanId}`);
+      return rows;
+    });
     if (!inserted.length) throw conflict('review_exists', 'Vous avez déjà noté cette intervention.');
-    await this.refreshAggregates(b.artisanId);
     const [a] = await this.conn.db.select({ userId: artisanProfiles.userId }).from(artisanProfiles).where(eq(artisanProfiles.id, b.artisanId));
     if (a) {
       await this.notifications.notify(a.userId, {
@@ -94,14 +104,6 @@ export class ReviewsService {
       });
     }
     return (await this.toDtos(inserted))[0]!;
-  }
-
-  async refreshAggregates(artisanId: string) {
-    await this.conn.db.execute(sql`
-      update artisan_profiles a set
-        rating_avg = s.avg, rating_count = s.n
-      from (select avg(rating)::real as avg, count(*)::int as n from reviews where artisan_id = ${artisanId} and hidden_at is null) s
-      where a.id = ${artisanId}`);
   }
 
   async reply(artisanUserId: string, reviewId: string, body: string): Promise<ReviewDto> {
