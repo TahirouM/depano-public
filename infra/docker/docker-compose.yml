@@ -1,0 +1,28 @@
+name: depano
+services:
+  postgres:
+    image: imresamu/postgis:17-3.5  # multi-arch (arm64 + amd64)
+    environment:
+      POSTGRES_USER: depano
+      POSTGRES_PASSWORD: depano
+      POSTGRES_DB: depano
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U depano"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  s3:
+    # Stockage objet compatible S3 (SeaweedFS). Le bucket est créé par l'API au démarrage.
+    image: chrislusf/seaweedfs:latest
+    command: server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data
+    ports: ["9000:8333"]
+    volumes:
+      - s3data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+volumes:
+  pgdata:
+  s3data:

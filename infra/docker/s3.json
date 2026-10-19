@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "depano",
+      "credentials": [{ "accessKey": "depano", "secretKey": "depano-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

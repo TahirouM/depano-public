@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  esbuild: true
+  "@nestjs/core": true
+  "@swc/core": true
+  sharp: true
+  unrs-resolver: true
+  "@tailwindcss/oxide": true
+  protobufjs: true
+  msgpackr-extract: true
+  bcrypt: false
+  cpu-features: false
+  ssh2: false

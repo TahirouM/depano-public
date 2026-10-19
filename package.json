@@ -1,0 +1,23 @@
+{
+  "name": "depano",
+  "private": true,
+  "packageManager": "pnpm@11.1.3",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "infra:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "db:generate": "pnpm --filter @depano/db generate",
+    "db:migrate": "pnpm --filter @depano/db migrate",
+    "db:seed": "pnpm --filter @depano/db seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.9",
+    "typescript": "^5.9.3",
+    "prettier": "^3.6.2"
+  }
+}

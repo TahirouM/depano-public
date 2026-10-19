@@ -1,0 +1,15 @@
+node_modules
+.turbo
+.expo
+dist
+.next
+*.tsbuildinfo
+.env
+.env.local
+.env*.local
+apps/mobile/ios
+apps/mobile/android
+.DS_Store
+coverage
+.vercel
+next-env.d.ts
