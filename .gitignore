@@ -13,3 +13,6 @@ apps/mobile/android
 coverage
 .vercel
 next-env.d.ts
+.terraform
+*.tfstate*
+.terraform.lock.hcl

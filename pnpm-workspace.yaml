@@ -13,3 +13,4 @@ allowBuilds:
   bcrypt: false
   cpu-features: false
   ssh2: false
+  "@scarf/scarf": false

@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1.7
+# Workers BullMQ DEPANO (réutilisent les services métier de @depano/api).
+#   docker build -f infra/docker/Dockerfile.worker -t depano-worker .
+ARG NODE_VERSION=24-bookworm-slim
+
+FROM node:${NODE_VERSION} AS base
+ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true
+RUN corepack enable && corepack prepare pnpm@11.1.3 --activate
+WORKDIR /repo
+
+FROM base AS manifests
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/worker/package.json apps/worker/
+COPY apps/api/package.json apps/api/
+COPY packages/db/package.json packages/db/
+COPY packages/schemas/package.json packages/schemas/
+
+FROM manifests AS build
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --filter "@depano/worker..."
+COPY tsconfig.base.json ./
+COPY packages/schemas packages/schemas
+COPY packages/db packages/db
+COPY apps/api apps/api
+COPY apps/worker apps/worker
+RUN pnpm --filter "@depano/worker..." build
+
+FROM manifests AS prod-deps
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --prod --filter "@depano/worker..."
+
+FROM node:${NODE_VERSION} AS runtime
+ENV NODE_ENV=production
+WORKDIR /repo
+COPY --from=prod-deps /repo ./
+COPY --from=build /repo/packages/schemas/dist packages/schemas/dist
+COPY --from=build /repo/packages/db/dist packages/db/dist
+COPY --from=build /repo/apps/api/dist apps/api/dist
+COPY --from=build /repo/apps/worker/dist apps/worker/dist
+USER node
+WORKDIR /repo/apps/worker
+CMD ["node", "dist/main.js"]

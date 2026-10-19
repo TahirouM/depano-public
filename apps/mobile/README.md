@@ -1,0 +1,321 @@
+# DEPANO mobile — playbook (`@depano/mobile`)
+
+Une seule app, deux espaces (client / artisan). Expo SDK 58 · React Native 0.88 · Expo Router 58 (routes typées) · TypeScript strict.
+Design system dans `packages/ui` (`@depano/ui`), contrat API dans `packages/schemas` (`@depano/schemas`), tous deux consommés **en source** par Metro (condition d'export `react-native`).
+
+> Lire ce document en entier avant d'ajouter un écran. Les fondations (shell, données, auth, écrans communs) sont faites ; votre travail consiste à remplacer les `PlaceholderScreen` de votre espace.
+
+---
+
+## 1. Démarrer
+
+```bash
+pnpm install                       # à la racine (pnpm 11, installation isolée : supportée par Expo ≥ 54)
+cp apps/mobile/.env.example apps/mobile/.env   # EXPO_PUBLIC_API_URL=http://localhost:3000
+pnpm --filter @depano/mobile start # puis i (iOS), a (Android), w (web)
+```
+
+- **Expo Go** : tous les modules utilisés sont inclus dans Expo Go SDK 58 (push distant indisponible sur Android en Expo Go : l'app le tolère). Pour un vrai test push / Sign in with Apple : development build (`npx expo run:ios`).
+- `localhost` est réécrit automatiquement : IP du serveur Metro sur appareil physique, `10.0.2.2` sur émulateur Android (`src/lib/env.ts`).
+- Connexion en dev : l'écran Connexion propose les comptes de démo (client `+33600000010`, artisan `+33600000101`). L'API renvoie `devCode` hors production : le code est **rempli et validé automatiquement**.
+- Les routes typées sont générées dans `.expo/types/router.d.ts` au premier `expo start` (lancer une fois avant `typecheck` pour un typage strict des `href`).
+
+| Commande | Rôle |
+| --- | --- |
+| `pnpm --filter @depano/mobile typecheck` | `tsc --noEmit` (strict, `noUncheckedIndexedAccess`) |
+| `pnpm --filter @depano/mobile test` | Vitest : stores, liens profonds |
+| `pnpm --filter @depano/ui typecheck` / `test` | Design system + test de contraste (222 paires) |
+| `pnpm --filter @depano/mobile export:ios` | Bundle iOS de production (preuve Metro + monorepo) |
+| `npx expo-doctor` (dans `apps/mobile`) | 20/20 attendu |
+
+---
+
+## 2. Arborescence
+
+```
+apps/mobile/
+  app.json                 scheme « depano », bundle fr.depano.app, plugins, typedRoutes
+  metro.config.js          config Expo par défaut (monorepo auto-détecté, ne rien ajouter)
+  src/
+    app/                   ROUTES UNIQUEMENT (Expo Router). Fichiers fins : ils importent features/*
+      _layout.tsx          providers + Stack racine (modales auth, notifications, paramètres)
+      +native-intent.tsx   réécrit depano://… vers l'espace actif
+      index.tsx            aiguillage : onboarding → /accueil ou /pro/accueil
+      onboarding.tsx       3 slides skippables (1er lancement)
+      (auth)/              connexion → code → identite → role → autorisations (modale)
+      autorisation/[kind]  explication avant popup système (askPermission)
+      notifications.tsx    fil groupé par jour
+      parametres/          compte, sécurité, notifications, légal, aide
+      (client)/            ESPACE CLIENT (URL sans préfixe)
+        (tabs)/            accueil, recherche, activite, messages, profil (pile par onglet)
+        artisan/[id]       fiche artisan (hors onglets)
+        urgence/…          parcours urgence (plein écran, sans tab bar)
+        rdv/…              parcours rendez-vous (plein écran)
+      pro/                 ESPACE ARTISAN (URL /pro/…, connexion obligatoire)
+        (tabs)/            accueil, planning, interventions, messages, profil
+        offre/[id]         demande d'urgence plein écran (fullScreenModal)
+        onboarding/…       KYC
+    components/            briques app (tab bar, cloche, QueryView, AuthGate, RoleSwitch, Placeholder…)
+    features/<domaine>/    écrans et logique métier réutilisables (chat, notifications, profile, settings, auth)
+    lib/                   api, query (client, keys, hooks, optimistic, mutations), realtime, push,
+                           permissions, upload, session, deepLinks, env, online
+    stores/                Zustand : auth (SecureStore), app, drafts, outbox (AsyncStorage)
+```
+
+**Pourquoi `pro/` et pas `(artisan)/`** : les groupes n'apparaissent pas dans l'URL ; `(client)/(tabs)/messages/[id]` et `(artisan)/(tabs)/messages/[id]` seraient la même URL `/messages/[id]`. Le segment réel `pro` lève l'ambiguïté (liens profonds, notifications).
+
+**Convention** : un écran = `src/app/.../fichier.tsx` (5 à 15 lignes) qui rend un composant de `src/features/<domaine>/`. Requêtes propres au domaine dans `src/features/<domaine>/queries.ts`.
+
+---
+
+## 3. Carte des routes (inventaire section 5 ↔ fichiers)
+
+Statut : ✅ implémenté (fondations) · 🧱 placeholder « À venir » à implémenter. Tous les chemins sont relatifs à `src/app/`.
+
+### Communs (fait)
+
+| Écran | Fichier | URL | Statut |
+| --- | --- | --- | --- |
+| Splash + onboarding | `onboarding.tsx` (splash natif : `expo-splash-screen`) | `/onboarding` | ✅ |
+| Connexion / inscription | `(auth)/connexion.tsx`, `(auth)/code.tsx` | `/connexion`, `/code` | ✅ OTP 6 chiffres, Apple (iOS), Google (si configuré) |
+| Prénom / nom | `(auth)/identite.tsx` | `/identite` | ✅ |
+| Choix du rôle | `(auth)/role.tsx` | `/role` | ✅ |
+| Autorisations | `(auth)/autorisations.tsx`, `autorisation/[kind].tsx` | `/autorisations`, `/autorisation/location` | ✅ |
+| Messages (liste) | `(client)/(tabs)/messages/index.tsx`, `pro/(tabs)/messages/index.tsx` → `features/chat/ConversationsScreen` | `/messages`, `/pro/messages` | ✅ |
+| Chat | `(client)/(tabs)/messages/[id].tsx`, `pro/(tabs)/messages/[id].tsx` → `features/chat/ChatScreen` | `/messages/{id}`, `/pro/messages/{id}` | ✅ texte, photo, vocal, optimistic, hors ligne |
+| Notifications | `notifications.tsx` → `features/notifications/NotificationsScreen` | `/notifications` | ✅ |
+| Paramètres | `parametres/index.tsx`, `compte`, `securite`, `notifications`, `legal`, `aide` | `/parametres/…` | ✅ |
+| Profil (onglet) | `(client)/(tabs)/profil/index.tsx`, `pro/(tabs)/profil/index.tsx` → `features/profile/ProfileScreen` | `/profil`, `/pro/profil` | ✅ base (identité, raccourcis, changement de rôle) — à enrichir |
+
+### Espace client — **agent client**
+
+| Écran (section 5) | Fichier | URL |
+| --- | --- | --- |
+| Accueil | `(client)/(tabs)/accueil/index.tsx` | `/accueil` |
+| Recherche / résultats | `(client)/(tabs)/recherche/index.tsx` | `/recherche` |
+| Fiche artisan | `(client)/artisan/[id].tsx` | `/artisan/{id}` |
+| Urgence 1 : domaine | `(client)/urgence/domaine.tsx` | `/urgence/domaine` |
+| Urgence 2 : motif | `(client)/urgence/motif.tsx` | `/urgence/motif` |
+| Urgence 3 : adresse | `(client)/urgence/adresse.tsx` | `/urgence/adresse` |
+| Urgence 4 : prix et paiement | `(client)/urgence/paiement.tsx` | `/urgence/paiement` |
+| Urgence 5 : recherche d'artisan | `(client)/urgence/[bookingId]/recherche.tsx` | `/urgence/{id}/recherche` |
+| Urgence 6 : suivi en direct | `(client)/urgence/[bookingId]/suivi.tsx` | `/urgence/{id}/suivi` |
+| RDV 1 : type | `(client)/rdv/type.tsx` | `/rdv/type?artisanId=` |
+| RDV 2 : motif | `(client)/rdv/motif.tsx` | `/rdv/motif` |
+| RDV 3 : créneau | `(client)/rdv/creneau.tsx` | `/rdv/creneau` |
+| RDV 4 : récap et paiement | `(client)/rdv/recap.tsx` | `/rdv/recap` |
+| Confirmation | `(client)/rdv/confirmation.tsx` | `/rdv/confirmation` |
+| Activité | `(client)/(tabs)/activite/index.tsx` | `/activite` |
+| Détail intervention | `(client)/(tabs)/activite/[id]/index.tsx` | `/activite/{id}` (cible de `depano://intervention/{id}`) |
+| Validation de devis | `(client)/(tabs)/activite/[id]/devis.tsx` | `/activite/{id}/devis` |
+| Fin d'intervention | `(client)/(tabs)/activite/[id]/fin.tsx` | `/activite/{id}/fin` |
+| Notation | `(client)/(tabs)/activite/[id]/notation.tsx` | `/activite/{id}/notation` |
+| Adresses / Paiement / Factures / Favoris / Parrainage / Aide | `(client)/(tabs)/profil/{adresses,paiement,factures,favoris,parrainage,aide}.tsx` | `/profil/…` |
+| Compte | ✅ commun : `parametres/compte.tsx` | `/parametres/compte` |
+
+### Espace artisan — **agent artisan**
+
+| Écran (section 5) | Fichier | URL |
+| --- | --- | --- |
+| Onboarding pro (KYC) | `pro/onboarding/{index,siret,metiers,zone,documents,verification}.tsx` | `/pro/onboarding/…` |
+| Accueil | `pro/(tabs)/accueil/index.tsx` | `/pro/accueil` |
+| Demande d'urgence | `pro/offre/[id].tsx` (ouverte auto sur `offer.created`) | `/pro/offre/{id}` (cible de `depano://offre/{id}`) |
+| Planning (+ indispo) | `pro/(tabs)/planning/index.tsx`, `planning/indisponibilite.tsx` | `/pro/planning` |
+| Interventions | `pro/(tabs)/interventions/index.tsx` | `/pro/interventions` |
+| Détail intervention | `pro/(tabs)/interventions/[id]/index.tsx` | `/pro/interventions/{id}` |
+| Devis sur place | `pro/(tabs)/interventions/[id]/devis.tsx` | `/pro/interventions/{id}/devis` |
+| Compte rendu | `pro/(tabs)/interventions/[id]/compte-rendu.tsx` | `/pro/interventions/{id}/compte-rendu` |
+| Saisie du code de fin | `pro/(tabs)/interventions/[id]/code.tsx` | `/pro/interventions/{id}/code` |
+| Profil public | `pro/(tabs)/profil/apercu.tsx` | `/pro/profil/apercu` |
+| Disponibilités / Tarifs / Revenus / Statistiques / Activité / Aide | `pro/(tabs)/profil/{disponibilites,tarifs,revenus,statistiques,activite,aide}.tsx` | `/pro/profil/…` |
+
+Ajouter un écran : créer le fichier, puis (si besoin d'un titre fixe) l'option `<Stack.Screen options={{ title }} />` dans l'écran lui-même. Les piles d'onglets sont dans `.../(tabs)/<onglet>/_layout.tsx` (`TabStack`), les parcours plein écran utilisent `FlowStack`.
+
+---
+
+## 4. Navigation et shell
+
+- **Tab bar** (`components/AppTabBar.tsx`) : 5 onglets, libellés toujours visibles, badges `me.badges` (Activité/Interventions = `activity`, Messages = `messages`). Masquée sur le chat (`HIDE_ON`) ; ajoutez-y vos écrans plein clavier.
+- **Cloche** dans l'en-tête de chaque racine d'onglet (`HeaderBell`, badge `notifications`).
+- **Intervention épinglée** (`PinnedInterventionHost`) au-dessus de la tab bar dans tous les onglets : `useActiveBooking(as)` + `useBookingLive` (statut et ETA en direct). Destination : `interventionHref(booking, as)` — urgence `searching` → recherche, `accepted/en_route` → suivi, sinon détail.
+- **Changement de rôle** : `const switchRole = useSwitchRole(); switchRole('artisan')` → voile plein écran à la couleur de l'espace cible (`AccentTransition`), `me.setActiveRole`, `router.replace`. Sans profil artisan → `/pro/onboarding`.
+- **Accent** : le thème suit `useAppStore().activeRole` (client = brun sable `#8A6A4A`, artisan = ardoise `#3B4A5A`). Pour un aperçu « vu client » dans l'espace artisan : `<AccentScope accent="client">`.
+- **Liens profonds** : `DEEP_LINKS` (schemas) → `lib/deepLinks.ts#resolveDeepLink(link, role)` (utilisé par `+native-intent` et le tap sur notification). Ajoutez-y tout nouveau type de lien (+ test dans `deepLinks.test.ts`).
+- **Hors ligne** : bannière en bas de l'écran (`AppProviders#OfflineLayout`), la navigation remonte d'autant, rien n'est masqué. Elle affiche le nombre d'actions en file.
+
+---
+
+## 5. Données
+
+### Client API
+
+```ts
+import { api, errorMessage } from '@/lib/api';
+const booking = await api.bookings.get(id);      // typé par @depano/schemas
+```
+- Jeton lu dans `useAuthStore` ; sur **401**, `refreshTokens()` (single-flight : 1 seul `/auth/refresh` même pour 10 requêtes) puis rejoue la requête. Refresh refusé → session vidée.
+- `errorMessage(e)` donne toujours un message humain en français ; `isNetworkError(e)` pour l'état hors ligne.
+
+### Requêtes (TanStack Query v5)
+
+- Clés : **toujours** `qk` (`lib/query/keys.ts`). Invalidation par préfixe : `qk.bookings.all`, `qk.bookings.lists`, `qk.artisan.all`…
+- Hooks partagés (`lib/query/hooks.ts`) : `useMe`, `useBadges`, `useDomains`, `useBookings(q)`, `useBooking(id)`, `useActiveBooking(as)`, `useConversations`, `useMessages(id)`, `useNotificationsFeed`, `useSessions`. Les requêtes nécessitant un compte sont `enabled: signedIn`.
+- Cache **persisté** (AsyncStorage, 24 h) : lecture hors ligne automatique. Exclure une requête sensible : `meta: { persist: false }`.
+- États d'écran : utilisez `QueryView` :
+
+```tsx
+<QueryView
+  query={q}
+  loading={<SkeletonList />}
+  isEmpty={(d) => d.items.length === 0}
+  empty={{ icon: ClipboardList, title: 'Aucune intervention', message: '…', action: { label: 'Demander une urgence', onPress } }}
+>
+  {(data) => <FlatList data={data.items} … />}
+</QueryView>
+```
+Il gère chargement (skeleton), erreur (message + « Réessayer »), hors ligne sans cache, vide.
+
+### Mutations, optimistic UI, file hors ligne
+
+- Hors ligne, les mutations sont **mises en pause** (`networkMode: 'online'`) puis rejouées au retour du réseau ; la bannière affiche « N actions en attente ».
+- **Helper optimistic** (`lib/query/optimistic.ts`) — exemple de référence dans `app/parametres/securite.tsx` :
+
+```ts
+const revoke = useMutation({
+  mutationFn: (id: string) => api.auth.revokeSession(id),
+  ...optimistic<SessionDto[], string>(qc, {
+    queryKey: () => qk.sessions,
+    update: (old, id) => old?.filter((s) => s.id !== id),
+    invalidate: () => [qk.badges],          // optionnel
+    onError: (e) => toast.error(errorMessage(e)),
+  }),
+});
+```
+  Mise à jour immédiate du cache → rollback si le serveur refuse → refetch de resynchronisation.
+- **Mutation rejouable après redémarrage** (ex. envoi de message) : déclarer sa logique dans `registerMutationDefaults` (`lib/query/mutations.ts`) avec une clé `mk.*`, puis `useMutation({ mutationKey: mk.xxx })`. Les callbacks d'un composant démonté n'existent plus après un kill : seuls les defaults survivent. Utilisez-le pour les actions qu'un artisan déclenche sans réseau (changement de statut, compte rendu).
+- Statuts d'intervention : l'app **demande** une transition (`api.bookings.transition(id, { to, lat, lng })`) ; afficher les boutons depuis `booking.allowedTransitions` (fourni par l'API), pas en recalculant la machine.
+
+### Stores Zustand (`src/stores`)
+
+| Store | Persistance | Contenu |
+| --- | --- | --- |
+| `useAuthStore` | expo-secure-store | `accessToken`, `refreshToken`, `userId` ; `returnTo` / `authReason` (non persistés) |
+| `useAppStore` | AsyncStorage | `onboardingSeen`, `activeRole`, `scheme`, préférences notifications, jeton push |
+| `useDraftsStore` / `useDraft` | AsyncStorage | brouillons des formulaires multi-étapes |
+| `useOutboxStore` | AsyncStorage | messages de chat en attente / échoués |
+
+**Brouillons** (une question par écran, retour sans perte) :
+```ts
+const [draft, patch, reset] = useDraft<UrgentDraft>(DRAFT_KEYS.urgent);
+patch({ domain: 'plomberie' });          // à chaque saisie
+reset();                                  // après création de la réservation
+// RDV : useDraft<ScheduledDraft>(DRAFT_KEYS.scheduled(artisanId))
+```
+
+### Temps réel (Socket.IO, contrat `realtime.ts`)
+
+- `RealtimeProvider` ouvre la socket à la connexion (jeton relu à chaque reconnexion, refresh si refusé) et la ferme à la déconnexion.
+- Événements → cache (`lib/realtime/handlers.ts`) : `booking.updated` (patch statut + invalidations listes/badges/dashboard), `booking.location` (position + ETA dans le détail), `booking.dispatch`, `message.created` (insertion dans le fil + retrait de l'outbox), `notification.created` (préfixe du fil + badges), `offer.created` (invalidation + **ouverture plein écran** `/pro/offre/{id}` si espace artisan), `offer.revoked`.
+- Hooks : `useRealtime()` → `{ socket, connected }` ; `useRealtimeEvent('typing', handler)` ; `useBookingLive(bookingId)` → détail + `booking.subscribe` à la room, repli en polling 15 s si déconnecté. Pour l'artisan en route : `socket.emit('location.update', …)` ou `api.bookings.updateLocation`.
+
+### Auth gate (visiteur → compte au bon moment)
+
+```ts
+const requireAuth = useRequireAuth();
+const onPay = () => {
+  if (!requireAuth('Créez votre compte pour payer — cela prend 30 secondes.')) return;
+  pay();
+};
+```
+Ouvre la modale de connexion, puis `finishAuthFlow()` ramène **exactement** à l'écran d'origine (brouillon intact). Écran entièrement réservé : `<AuthGate title message>{…}</AuthGate>`.
+
+### Permissions, push, fichiers
+
+- `await askPermission('location', 'Pour trouver les artisans proches')` : écran d'explication → popup système → `true/false`. Jamais au lancement.
+- `getUserPosition({ ask: true, reason })` → `{ lat, lng, approximate }` ; refus = centre de Marseille + `approximate: true` (mode dégradé : proposer la saisie d'adresse).
+- Notifications : demander après la 1re réservation (`askPermission('notifications', 'Pour suivre l'arrivée de l'artisan')`) ; le jeton Expo est enregistré via `me.registerPushToken`. Le tap ouvre `data.link`.
+- Fichiers : `const file = await pickImage('camera' | 'library')` puis `await uploadFile(file, 'problem_photo')` → `{ fileId, url }` (URL pré-signée + PUT + `files.complete`). Passez `fileId` aux endpoints (`problemFileIds`, `beforeFileIds`…).
+
+---
+
+## 6. Design system (`@depano/ui`)
+
+Tout passe par `useTheme()` : `t.colors.*` (sémantique, clair/sombre, accent), `t.spacing` (4/8/12/16/24/32/48), `t.radius` (8 champs, 12 cartes, 20 sheets, `full` chips), `t.text(variant)`, `t.elevation(0|1|3)`. **Aucune couleur en dur dans les écrans.** Rouge `tone.urgent` : bouton et parcours urgence uniquement ; actions destructives = `tone.danger`.
+
+| Composant | Usage |
+| --- | --- |
+| `Text` | `variant` display/title1/title2/body/bodyStrong/callout/label/caption/overline ; `tone` primary/secondary/brand/success/danger… Titres annoncés « en-tête ». |
+| `Button` | `variant` primary/secondary/ghost/danger/urgent, `size` sm/md/lg, `loading`, `icon`, `haptic="success"` |
+| `IconButton` | 48×48, `accessibilityLabel` obligatoire, `badge` |
+| `Card` | surface (élévation 1), brand (beige), outline, flat ; `onPress` |
+| `ListItem` | ligne 48 px+ : icône/avatar, titre, sous-titre, valeur, badge, chevron, `destructive` |
+| `Avatar`, `Badge`, `Divider`, `SectionHeader` | — |
+| `TextField` | label toujours visible, `helper`, `error` (icône + texte), `left/right` |
+| `OtpInput` | `length={6}` (SMS, autofill) ou `{4}` (code de fin), `onComplete` |
+| `Switch` | ligne entière cliquable, rôle « switch » |
+| `Chip`, `DomainChip`, `StatusChip` | filtres (coche quand sélectionné), métier, statut (couleur + icône + libellé, `perspective="artisan"`) |
+| `SegmentedControl` | « En cours / Passées » |
+| `ArtisanCard`, `InterventionCard` | cartes DTO prêtes (`ArtisanCardDto`, `BookingSummaryDto`) |
+| `SlotPicker` | `days: SlotDay[]` ; passés/pris **masqués** ; état vide intégré |
+| `ProgressHeader` (`Stepper`) | « Étape 2 sur 4 » + question de l'écran |
+| `Timeline` | statuts datés d'une intervention |
+| `PriceRow`, `PriceSummary` | toujours un **Total TTC** ; `showRange`, `note` |
+| `StarRating` | affichage (`value`, `count`) ou saisie (`onChange`, cibles 56 px) |
+| `BottomSheet`, `ConfirmSheet` | choix courts (motif, créneau, paiement, annulation) ; geste, voile, bouton Fermer |
+| `EmptyState`, `ErrorState`, `Skeleton*` | états systématiques |
+| `ToastProvider` / `useToast()` | `toast.success('…')`, `toast.error(errorMessage(e))`, action optionnelle |
+| `OfflineBanner` | déjà monté globalement |
+| `Screen` | safe area + clavier + scroll + `footer` collant (`inTabs` dans un onglet) |
+| `StickyFooter` | CTA dans la zone du pouce |
+| `PinnedInterventionBar` | déjà monté dans la tab bar |
+| `AccentTransition`, `AccentScope` | transition de rôle / aperçu d'accent |
+| `haptic(kind)`, `useReduceMotion`, `timing()` | retour haptique, réduction des animations, durées 200–300 ms |
+| `formatEuros` (schemas), `formatDateTime`, `relativeDayLabel`, `formatDistance`… | formatages FR (Europe/Paris) |
+
+Accessibilité intégrée : cibles ≥ 48 px, `accessibilityRole/Label/State` partout, Dynamic Type jusqu'à 200 % (`maxFontSizeMultiplier=2`, ne jamais fixer de hauteur de texte), Reduce Motion (`ReduceMotion.System`), contraste vérifié par `packages/ui/src/tokens/contrast.test.ts` — **ajoutez-y toute nouvelle paire texte/fond**. Icônes : `lucide-react-native` via `<Icon icon={Wrench} />` (décoratives, masquées aux lecteurs d'écran).
+
+---
+
+## 7. Règles UX (plan, section 2) — à appliquer à chaque écran
+
+1. **Zone du pouce** : CTA principal en bas (`<Screen footer={<Button size="lg" fullWidth …/>}>`), jamais en haut. Cibles 48×48 min.
+2. **Bottom sheets** pour les choix courts : motif, créneau, moyen de paiement, annulation, filtres.
+3. **Une question par écran** avec `ProgressHeader step={2} total={4} title="Quel est le problème ?"`, retour sans perte (`useDraft`).
+4. **États systématiques** : skeleton (pas de spinner plein écran), vide (icône + CTA), erreur (message humain + Réessayer), hors ligne (cache + actions en file).
+5. **Optimistic UI** sur messages et statuts, rollback si refus.
+6. **Temps réel visible** : `useBookingLive`, ETA, statut daté (`Timeline`).
+7. **Haptique** sur les validations clés : paiement, code de fin, urgence envoyée (`haptic="success"`).
+8. **Prix avant engagement** : aucun écran de validation sans `PriceSummary` (total TTC).
+9. **Jamais la couleur seule** : statut = couleur + icône + libellé ; erreur = icône + texte.
+10. **Artisan d'une main** : actions principales en bas, gros boutons, saisie vocale du compte rendu.
+
+Microcopy (ton rassurant, vouvoiement, phrases courtes) :
+- « Vous ne payez qu'à la fin, quand vous donnez le code. »
+- « Annulation gratuite jusqu'à 2 h avant. »
+- « Votre carte n'est débitée qu'à la fin. Rien n'est prélevé maintenant. »
+- « 3 artisans contactés… Le premier qui accepte arrive. »
+- « Karim arrive dans 12 min. »
+- « Ce n'est pas de votre faute. Réessayez dans un instant. »
+- « Vous êtes hors ligne. Votre message partira au retour du réseau. »
+- Boutons à l'infinitif ou impératif clair : « Recevoir le code », « Valider le devis », « Y aller ».
+
+---
+
+## 8. Conventions
+
+- Textes visibles **en français**, identifiants **en anglais**, commentaires rares et en français.
+- Montants en **centimes** partout ; affichage `formatEuros(cents)`. Dates ISO ; affichage via les helpers `@depano/ui` (Europe/Paris).
+- Valider les formulaires avec les schémas Zod de `@depano/schemas` (`zodResolver`) quand ils existent ; ne pas dupliquer les règles (`RULES`).
+- Ne pas importer `@depano/schemas` côté UI pour autre chose que types/libellés/règles.
+- Ne pas modifier `packages/schemas` : signaler un manque de contrat.
+- Les `testID` (`tab-*`, `request-otp`, `otp-input`, `switch-role`…) servent aux tests E2E (Maestro / Playwright web).
+- Avant de rendre la main : `typecheck`, `test`, `export:ios`.
+
+## 9. Points ouverts côté contrat (à arbitrer avec l'API)
+
+- Pas d'endpoint de préférences de notifications (stockées localement dans `useAppStore`).
+- Sémantique de `me.setActiveRole('artisan')` sans profil artisan (création d'un brouillon ?) et d'un endpoint « devenir artisan ».
+- `MessageDto` sans durée pour les vocaux ; ordre des pages de messages non spécifié (l'app trie par `createdAt`).
+- Pas de désenregistrement du jeton push à la déconnexion.
+- Format de l'erreur d'authentification Socket.IO (l'app détecte `unauthorized|jwt|token|401`).
+- Passkeys : endpoints présents, UI désactivée (`features.passkeys`), module natif à choisir.

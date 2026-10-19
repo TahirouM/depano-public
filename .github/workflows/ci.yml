@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: depano
+          POSTGRES_PASSWORD: depano
+          POSTGRES_DB: depano_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U depano" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://depano:depano@localhost:5432/depano_test
+      TEST_DATABASE_URL: postgres://depano:depano@localhost:5432/depano_test
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access
+      JWT_REFRESH_SECRET: ci-refresh
+      OTP_PEPPER: ci-pepper
+      PAYMENT_PROVIDER: fake
+      SMS_PROVIDER: console
+      PUSH_PROVIDER: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm db:migrate
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  docker:
+    needs: checks
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: rg.fr-par.scw.cloud/depano
+          username: nologin
+          password: ${{ secrets.SCW_SECRET_KEY }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile.${{ matrix.service }}
+          push: true
+          tags: |
+            rg.fr-par.scw.cloud/depano/${{ matrix.service }}:${{ github.sha }}
+            rg.fr-par.scw.cloud/depano/${{ matrix.service }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    needs: docker
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - working-directory: infra/terraform/envs/staging
+        env:
+          SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+          SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+          SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_PROJECT_ID }}
+          TF_VAR_image_tag: ${{ github.sha }}
+        run: |
+          terraform init -input=false
+          terraform apply -input=false -auto-approve

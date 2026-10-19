@@ -1,0 +1,35 @@
+name: Mobile (EAS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Profil EAS (development, preview, production)
+        default: preview
+  push:
+    branches: [main]
+    paths: ["apps/mobile/**", "packages/ui/**", "packages/schemas/**"]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @depano/schemas build
+      - working-directory: apps/mobile
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            eas build --platform all --profile ${{ inputs.profile }} --non-interactive --no-wait
+          else
+            eas update --branch preview --auto --non-interactive
+          fi

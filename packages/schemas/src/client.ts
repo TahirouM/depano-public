@@ -74,7 +74,7 @@ export function createApiClient(opts: ApiClientOptions) {
   return {
     request,
     auth: {
-      requestOtp: (b: In<typeof D.OtpRequestBody>) => post<{ sent: true; retryAfterSeconds: number }>('/auth/otp/request', b),
+      requestOtp: (b: In<typeof D.OtpRequestBody>) => post<{ sent: true; retryAfterSeconds: number; /** Uniquement hors production. */ devCode?: string }>('/auth/otp/request', b),
       verifyOtp: (b: In<typeof D.OtpVerifyBody>) => post<D.AuthResult>('/auth/otp/verify', b),
       apple: (b: In<typeof D.AppleSignInBody>) => post<D.AuthResult>('/auth/apple', b),
       google: (b: In<typeof D.GoogleSignInBody>) => post<D.AuthResult>('/auth/google', b),
