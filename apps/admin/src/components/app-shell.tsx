@@ -76,7 +76,7 @@ function ThemeMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>Thème</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
+        <DropdownMenuRadioGroup value={theme ?? 'light'} onValueChange={setTheme}>
           <DropdownMenuRadioItem value="light">
             <Sun aria-hidden /> Clair
           </DropdownMenuRadioItem>

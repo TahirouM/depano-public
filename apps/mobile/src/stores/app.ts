@@ -26,7 +26,7 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       onboardingSeen: false,
       activeRole: 'client',
-      scheme: 'system',
+      scheme: 'light',
       permissionAsked: { location: false, notifications: false },
       pushToken: null,
       setOnboardingSeen: () => set({ onboardingSeen: true }),
@@ -36,6 +36,16 @@ export const useAppStore = create<AppState>()(
       setPushToken: (pushToken) => set({ pushToken }),
       resetForSignOut: () => set({ activeRole: 'client', pushToken: null }),
     }),
-    { name: 'depano.app', storage: asyncJSONStorage, version: 1 },
+    {
+      name: 'depano.app',
+      storage: asyncJSONStorage,
+      version: 2,
+      // v2 : mode clair par défaut ; l'ancien défaut « system » repasse en clair.
+      migrate: (persisted, version) => {
+        const s = persisted as Partial<AppState>;
+        if (version < 2 && s.scheme === 'system') s.scheme = 'light';
+        return s as AppState;
+      },
+    },
   ),
 );

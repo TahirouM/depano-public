@@ -37,7 +37,7 @@ const ThemeContext = createContext<Theme>(createTheme('light'));
 
 export interface ThemeProviderProps {
   children: ReactNode;
-  /** 'system' suit le réglage du téléphone (défaut). */
+  /** 'system' suit le réglage du téléphone ; clair par défaut. */
   scheme?: SchemePreference;
   /** Accent de l'espace actif (client / artisan). */
   accent?: Accent;
@@ -45,7 +45,7 @@ export interface ThemeProviderProps {
   fonts?: FontFamilies;
 }
 
-export function ThemeProvider({ children, scheme = 'system', accent = 'client', fonts = null }: ThemeProviderProps) {
+export function ThemeProvider({ children, scheme = 'light', accent = 'client', fonts = null }: ThemeProviderProps) {
   const system = useColorScheme();
   const resolved: ColorScheme = scheme === 'system' ? (system === 'dark' ? 'dark' : 'light') : scheme;
   const theme = useMemo(() => createTheme(resolved, accent, fonts), [resolved, accent, fonts]);
