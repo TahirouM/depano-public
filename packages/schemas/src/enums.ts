@@ -26,11 +26,12 @@ export const ScheduledType = z.enum(SCHEDULED_TYPES);
 export type ScheduledType = z.infer<typeof ScheduledType>;
 
 /**
- * Cycle de vie d'une intervention : 9 états + 4 sorties.
+ * Cycle de vie d'une intervention : 10 états + 4 sorties.
  * Voir booking-machine.ts pour les transitions autorisées.
  */
 export const BOOKING_STATUSES = [
-  'pending_payment', // empreinte bancaire en cours
+  'pending_payment', // empreinte bancaire en cours (ou prix proposé par l'artisan, à accepter par le client)
+  'requested', // RDV : demande envoyée, en attente de la réponse de l'artisan
   'searching', // urgence : dispatch en cours
   'accepted', // artisan assigné
   'en_route',
@@ -49,6 +50,7 @@ export const BookingStatus = z.enum(BOOKING_STATUSES);
 export type BookingStatus = z.infer<typeof BookingStatus>;
 
 export const ACTIVE_BOOKING_STATUSES: readonly BookingStatus[] = [
+  'requested',
   'searching',
   'accepted',
   'en_route',
@@ -67,6 +69,7 @@ export const TERMINAL_BOOKING_STATUSES: readonly BookingStatus[] = [
 
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   pending_payment: 'Paiement en attente',
+  requested: "En attente de l'artisan",
   searching: "Recherche d'un artisan",
   accepted: 'Acceptée',
   en_route: 'Artisan en route',
@@ -153,11 +156,14 @@ export const NOTIFICATION_TYPES = [
   'artisan_rejected',
   'document_expiring',
   'payout',
+  'booking_requested',
+  'price_proposed',
+  'referral_reward',
 ] as const;
 export const NotificationType = z.enum(NOTIFICATION_TYPES);
 export type NotificationType = z.infer<typeof NotificationType>;
 
-export const FILE_PURPOSES = ['avatar', 'problem_photo', 'problem_voice', 'report_before', 'report_after', 'chat', 'document', 'portfolio', 'review'] as const;
+export const FILE_PURPOSES = ['avatar', 'problem_photo', 'problem_voice', 'report_before', 'report_after', 'chat', 'document', 'portfolio', 'review', 'banner'] as const;
 export const FilePurpose = z.enum(FILE_PURPOSES);
 export type FilePurpose = z.infer<typeof FilePurpose>;
 
@@ -167,3 +173,15 @@ export type DispatchOfferStatus = z.infer<typeof DispatchOfferStatus>;
 
 export const CANCEL_ACTORS = ['client', 'artisan', 'system', 'support'] as const;
 export type Actor = (typeof CANCEL_ACTORS)[number];
+
+/** Raison déclarée par l'artisan quand l'intervention n'est pas réalisable (frais de déplacement facturés). */
+export const NOT_FEASIBLE_REASONS = ['client_absent', 'access_impossible', 'parts_missing', 'other'] as const;
+export const NotFeasibleReason = z.enum(NOT_FEASIBLE_REASONS);
+export type NotFeasibleReason = z.infer<typeof NotFeasibleReason>;
+
+export const NOT_FEASIBLE_REASON_LABELS: Record<NotFeasibleReason, string> = {
+  client_absent: 'Client absent',
+  access_impossible: 'Accès impossible',
+  parts_missing: 'Pièce ou matériel manquant',
+  other: 'Autre',
+};

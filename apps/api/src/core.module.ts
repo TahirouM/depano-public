@@ -37,6 +37,8 @@ import { AuditService } from './modules/admin/audit.service';
 import { InvoicesService } from './modules/invoices/invoices.service';
 import { MaintenanceService } from './modules/maintenance/maintenance.service';
 import { ReliabilityService } from './modules/maintenance/reliability.service';
+import { ReferralService } from './modules/me/referral.service';
+import { PromotionService } from './modules/artisan/promotion.service';
 
 /** Prestataires externes, sélectionnés par variables d'environnement. */
 const externalProviders: Provider[] = [
@@ -85,6 +87,8 @@ export const DOMAIN_SERVICES = [
   InvoicesService,
   MaintenanceService,
   ReliabilityService,
+  ReferralService,
+  PromotionService,
 ];
 
 @Global()

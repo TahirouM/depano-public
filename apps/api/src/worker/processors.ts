@@ -52,6 +52,8 @@ export function createProcessors(app: Pick<INestApplicationContext, 'get'>): Rec
           return bookings.authorizeScheduled(d.bookingId);
         case 'quote-expire':
           return bookings.expireQuote(d.bookingId, d.quoteId);
+        case 'request-expire':
+          return bookings.expireRequest(d.bookingId);
         default:
           return unknown('bookings', job.name);
       }
@@ -68,6 +70,7 @@ export function createProcessors(app: Pick<INestApplicationContext, 'get'>): Rec
       if (job.name === 'document-expiry') return maintenance.documentExpiry();
       if (job.name === 'data-retention') return maintenance.dataRetention();
       if (job.name === 'reliability') return maintenance.reliabilitySweep();
+      if (job.name === 'promotion-renew') return maintenance.promotionRenewal();
       return unknown('maintenance', job.name);
     },
   } as Record<QueueName, Processor>;
@@ -78,4 +81,5 @@ export const REPEATABLE_JOBS = [
   { id: 'document-expiry-daily', name: 'document-expiry', pattern: '0 3 * * *' },
   { id: 'data-retention-daily', name: 'data-retention', pattern: '30 3 * * *' },
   { id: 'reliability-hourly', name: 'reliability', pattern: '15 * * * *' },
+  { id: 'promotion-renew-hourly', name: 'promotion-renew', pattern: '45 * * * *' },
 ] as const;

@@ -48,7 +48,8 @@ apps/mobile/
       notifications.tsx    fil groupé par jour
       parametres/          compte, sécurité, notifications, légal, aide
       (client)/            ESPACE CLIENT (URL sans préfixe)
-        (tabs)/            accueil, recherche, activite, messages, profil (pile par onglet)
+        (tabs)/            accueil, activite (« Rendez-vous »), interventions, messages, profil (pile par onglet)
+        recherche          recherche / résultats (poussée depuis l'accueil, hors onglets)
         artisan/[id]       fiche artisan (hors onglets)
         urgence/…          parcours urgence (plein écran, sans tab bar)
         rdv/…              parcours rendez-vous (plein écran)
@@ -92,8 +93,8 @@ Statut : ✅ implémenté (fondations) · 🧱 placeholder « À venir » à imp
 
 | Écran (section 5) | Fichier | URL |
 | --- | --- | --- |
-| Accueil | `(client)/(tabs)/accueil/index.tsx` | `/accueil` |
-| Recherche / résultats | `(client)/(tabs)/recherche/index.tsx` | `/recherche` |
+| Accueil (sans compte) | `(client)/(tabs)/accueil/index.tsx` | `/accueil` |
+| Recherche / résultats | `(client)/recherche.tsx` (plus d'onglet : barre de recherche de l'accueil) | `/recherche` |
 | Fiche artisan | `(client)/artisan/[id].tsx` | `/artisan/{id}` |
 | Urgence 1 : domaine | `(client)/urgence/domaine.tsx` | `/urgence/domaine` |
 | Urgence 2 : motif | `(client)/urgence/motif.tsx` | `/urgence/motif` |
@@ -106,7 +107,8 @@ Statut : ✅ implémenté (fondations) · 🧱 placeholder « À venir » à imp
 | RDV 3 : créneau | `(client)/rdv/creneau.tsx` | `/rdv/creneau` |
 | RDV 4 : récap et paiement | `(client)/rdv/recap.tsx` | `/rdv/recap` |
 | Confirmation | `(client)/rdv/confirmation.tsx` | `/rdv/confirmation` |
-| Activité | `(client)/(tabs)/activite/index.tsx` | `/activite` |
+| Mes rendez-vous (onglet « Rendez-vous ») | `(client)/(tabs)/activite/index.tsx` | `/activite` |
+| Interventions réalisées | `(client)/(tabs)/interventions/index.tsx`, `interventions/[id]/{index,notation}.tsx` | `/interventions`, `/interventions/{id}` |
 | Détail intervention | `(client)/(tabs)/activite/[id]/index.tsx` | `/activite/{id}` (cible de `depano://intervention/{id}`) |
 | Validation de devis | `(client)/(tabs)/activite/[id]/devis.tsx` | `/activite/{id}/devis` |
 | Fin d'intervention | `(client)/(tabs)/activite/[id]/fin.tsx` | `/activite/{id}/fin` |
@@ -118,6 +120,9 @@ Statut : ✅ implémenté (fondations) · 🧱 placeholder « À venir » à imp
 - `queries.ts` (catalogue, carnet d'adresses, favoris optimistes, cartes, factures, autocomplétion `useAddressSearch`), `drafts.ts` (brouillons étendus : médias locaux téléversés au paiement, `prefillUrgentDraft` / `prefillScheduledDraft` pour relancer).
 - `payment/` : `usePaymentSheet` (fake = validation simulée ; Stripe PaymentSheet en natif, chargé à la demande, clé `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`) et `useCheckout` (création → feuille de paiement → `confirmPayment`, réservation réutilisée au nouvel essai).
 - `map/LiveMap` (`react-native-maps` en natif, schéma de distance sur web), `calendar/addToCalendar` (formulaire système `expo-calendar` en natif, fichier `.ics` sur web).
+- Onglets client : `lib/clientTabs.ts` (ordre, libellés, testID, badges) partagé par `(tabs)/_layout.tsx` et `_layout.web.tsx`. Accueil, Rendez-vous et Interventions utilisent `components/HeroSheetLayout` (en-tête fixe aux couleurs du thème, feuille de contenu qui le recouvre au défilement ; `HERO_IMAGE` pour une future photo).
+- Visiteur : accueil et recherche libres (lieu : position, adresse, ou Marseille via `LocationPicker` / `useSearchOrigin`) ; connexion demandée au paiement (urgence, RDV) et à l'ouverture du Profil ; les autres onglets affichent `AuthGate`.
+- Demandes de RDV : statut `requested` (l'artisan accepte), besoin « Autre… » = `priceOnRequest` (pas de paiement à la création) ; propositions de l'artisan (prix, nouveau RDV) acceptées via `usePayBooking` (`payment-session` → feuille → `confirm-payment`). Logique pure : `activity/bookingState.ts`.
 - `navigation.ts#useLeaveFlow` : quitter un parcours (urgence, RDV) vers les onglets sans créer un second navigateur d'onglets (ne pas utiliser `router.replace('/activite/…')` depuis une pile de parcours).
 - Sur web, `Linking.openURL('tel:…')` fige les gestes : l'appel relais affiche le numéro (`ArtisanContact`).
 
@@ -149,7 +154,7 @@ Ajouter un écran : créer le fichier, puis (si besoin d'un titre fixe) l'option
 
 ## 4. Navigation et shell
 
-- **Tab bar** : système sur iOS/Android, JS sur web (voir §10). `(tabs)/_layout.tsx` → `components/SpaceNativeTabs.tsx` (`NativeTabs` d'`expo-router/native-tabs` : SF Symbols / Material Symbols, Liquid Glass automatique sur iOS 26) ; `(tabs)/_layout.web.tsx` → `components/AppTabBar.tsx`. 5 onglets, libellés toujours visibles, badges `me.badges` (Activité/Interventions = `activity`, Messages = `messages`) avec libellé accessible « N non lus ». Masquée sur le chat (`lib/tabBar.ts#isTabBarHiddenOn`) ; ajoutez-y vos écrans plein clavier. Nouvel onglet : l'ajouter dans **les deux** fichiers de layout.
+- **Tab bar** : système sur iOS/Android, JS sur web (voir §10). `(tabs)/_layout.tsx` → `components/SpaceNativeTabs.tsx` (`NativeTabs` d'`expo-router/native-tabs` : SF Symbols / Material Symbols, Liquid Glass automatique sur iOS 26) ; `(tabs)/_layout.web.tsx` → `components/AppTabBar.tsx`. 5 onglets, libellés toujours visibles, badges `me.badges` (Rendez-vous client / Interventions artisan = `activity`, Messages = `messages`) avec libellé accessible « N non lus ». Masquée sur le chat (`lib/tabBar.ts#isTabBarHiddenOn`) ; ajoutez-y vos écrans plein clavier. Nouvel onglet : l'ajouter dans **les deux** fichiers de layout.
 - **Cloche** dans l'en-tête de chaque racine d'onglet (`HeaderBell`, badge `notifications`).
 - **Intervention épinglée** (`usePinnedIntervention`) au-dessus de la tab bar dans tous les onglets : `useActiveBooking(as)` + `useBookingLive` (statut et ETA en direct). Affichage selon la plateforme : §10. Destination : `interventionHref(booking, as)` — urgence `searching` → recherche, `accepted/en_route` → suivi, sinon détail.
 - **Changement de rôle** : `const switchRole = useSwitchRole(); switchRole('artisan')` → voile plein écran à la couleur de l'espace cible (`AccentTransition`), `me.setActiveRole`, `router.replace`. Sans profil artisan → `/pro/onboarding`.

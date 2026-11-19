@@ -12,6 +12,7 @@ export const qk = {
   paymentMethods: ['me', 'payment-methods'] as const,
   invoices: ['me', 'invoices'] as const,
   notificationPrefs: ['me', 'notification-preferences'] as const,
+  referral: ['me', 'referral'] as const,
   sessions: ['auth', 'sessions'] as const,
 
   catalog: {

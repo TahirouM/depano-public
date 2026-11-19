@@ -48,6 +48,31 @@ Points clés :
   Capture à la validation du code (ou auto 24 h après le compte rendu, sauf litige), commission = `computeCommission`
   (jamais sur des frais de déplacement seuls). Stripe : `transfer_data.destination` quand l'artisan est connu à la
   création (RDV), sinon transfert séparé après capture (urgence).
+- **Demandes de RDV** : après l'empreinte, un RDV passe en `requested` ; l'artisan accepte (`accepted` : code de fin,
+  rappels, conversation créée), refuse (`cancelled_by_artisan`, empreinte libérée, sans effet sur la fiabilité) ou, pour
+  une demande « Autre » (`priceOnRequest`, créée directement en `requested` sans paiement), propose un prix
+  (`pending_payment` + `artisanAcceptedAt`) que le client valide via `POST /bookings/:id/payment-session` puis
+  `confirm-payment` (⇒ `accepted`). Sans réponse : `request-expire`. La messagerie n'existe qu'après l'acceptation
+  (`chatIsOpen`).
+- **Intervention non réalisable** (`POST /bookings/:id/not-feasible`) : déplacement seul (`awaiting_code`, capture auto
+  24 h, litige possible) ; report optionnel = nouveau RDV `pending_payment` déjà accepté par l'artisan.
+- **Parrainage** : code par client (`client_profiles.referral_code`), saisie unique d'un code d'ami ⇒ même montant
+  aléatoire (5–20 €) crédité aux deux (`referral_credits`). Le plus ancien crédit est consommé à la création d'une
+  intervention (`bookings.discount_cents`, déduit du total et de l'empreinte) et rendu si elle est annulée, expirée,
+  refusée ou close en déplacement seul. Réduction financée par DEPANO : commission = commission du montant avant
+  réduction − réduction (plancher 0) ; ligne « Réduction parrainage » sur la facture.
+- **Annulation client** (`clientCancellationIsFree`) : gratuite pendant 1 h après la prise de RDV (`bookings.created_at`),
+  ou avec la garantie annulation, ou si l'artisan a plus de 30 min de retard, ou tant que rien n'est confirmé
+  (`pending_payment`, `requested`, `searching`) ; sinon frais de déplacement capturés, sans commission.
+- **Tarifs artisan** : `PUT /artisan/services` conserve les lignes `active: false` (prix gardé, invisibles des clients)
+  et retire les services du catalogue absents du corps. Motifs personnels (`services.owner_artisan_id`) :
+  `POST /artisan/services/custom` (métier déclaré, 30 max, jamais en urgence), `DELETE /artisan/services/custom/:id`
+  (seule voie de suppression ; service désactivé plutôt que supprimé s'il est référencé par une intervention). Exclus du
+  catalogue (`/domains`, estimation, back-office) ; côté client, seule l'offre active de l'artisan compte
+  (`offeredBy` : profil public, « à partir de », réservation).
+- **Mise en avant** (`/artisan/promotion`) : `pro_until` > now ⇒ en tête du tri « pertinence » (`promoted`). Prestataire
+  factice : activation immédiate, renouvellement par le job ; Stripe : abonnement Billing, période prolongée par
+  `invoice.paid`, résiliation = `cancel_at_period_end`.
 - **Code de fin** : 4 chiffres générés à l'acceptation, stockés hachés (HMAC) + chiffrés (AES-256-GCM, visibles du seul
   client). 3 erreurs ⇒ blocage (423), audit log et alerte support.
 - **Adresse masquée** : l'artisan ne voit l'adresse exacte qu'à partir de `accepted` (`artisanCanSeeExactAddress`),
@@ -103,6 +128,7 @@ Lues depuis le `.env` racine (voir `.env.example`) ; valeurs par défaut adapté
 | `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | stockage objet ; `S3_PUBLIC_ENDPOINT` (optionnel) sert aux URL signées vues par le téléphone |
 | `PAYMENT_PROVIDER` | `fake` (tout réussit, aucun appel externe) ou `stripe` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` | Stripe Connect Express ; webhook : `POST /v1/webhooks/stripe` |
+| `STRIPE_PROMOTION_PRICE_ID` | prix récurrent Stripe Billing (29,90 € / 30 jours, cf. `RULES.promotion`) de l'abonnement « Promouvoir mon compte » ; webhooks `invoice.paid` (prolonge la période) et `customer.subscription.deleted` |
 | `SMS_PROVIDER` | `console` ou `twilio` (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`) |
 | `TWILIO_PROXY_SERVICE_SID` | si défini, relais d'appel Twilio Proxy ; sinon numéro factice |
 | `PUSH_PROVIDER` | `console` ou `expo` (`EXPO_ACCESS_TOKEN` optionnel) |
@@ -116,10 +142,10 @@ Lues depuis le `.env` racine (voir `.env.example`) ; valeurs par défaut adapté
 | --- | --- |
 | `dispatch` | `start`, `wave-timeout` (60 s) |
 | `notifications` | `push`, `sms` (5 essais, backoff exponentiel) |
-| `bookings` | `auto-capture` (24 h), `reminder` (veille, 1 h avant), `authorize-scheduled`, `quote-expire` (30 min) |
+| `bookings` | `auto-capture` (24 h), `reminder` (veille, 1 h avant), `authorize-scheduled`, `quote-expire` (30 min), `request-expire` (demande de RDV sans réponse / proposition non validée : 24 h, au plus tard l'heure du RDV) |
 | `files` | `thumbnail` (sharp, 400 px WebP) |
 | `invoices` | `generate` (PDF pdfkit : facture de prestation artisan → client + facture de commission DEPANO → artisan, numérotation `F-YYYY-000001`) |
-| `maintenance` | `document-expiry` (quotidien, relance 30 j avant), `data-retention` (purge chats/photos > 3 ans), `reliability` (3 annulations / 30 j ⇒ urgences suspendues 30 j) |
+| `maintenance` | `document-expiry` (quotidien, relance 30 j avant), `data-retention` (purge chats/photos > 3 ans), `reliability` (3 annulations / 30 j ⇒ urgences suspendues 30 j), `promotion-renew` (horaire : renouvelle les mises en avant factices échues) |
 
 ## Limites connues / TODO
 

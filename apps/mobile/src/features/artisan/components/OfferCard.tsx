@@ -1,5 +1,5 @@
 import { formatEuros, type UrgentOfferDto } from '@depano/schemas';
-import { Card, DomainChip, formatDistance, Text, useTheme } from '@depano/ui';
+import { Card, DomainChip, formatDistance, Pulse, Text, useTheme } from '@depano/ui';
 import { ChevronRight, Siren } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
@@ -18,38 +18,56 @@ export function useCountdown(expiresAt: string | undefined): number {
   return left;
 }
 
-/** Demande d'urgence en attente (accueil) : motif, distance, gain net, temps restant. */
-export function OfferCard({ offer, onPress }: { offer: UrgentOfferDto; onPress: () => void }) {
+/**
+ * Demande d'urgence en attente (accueil) : motif, distance, gain net, temps restant.
+ * `pulse` : nouvelle urgence pas encore ouverte, la carte pulse jusqu'à son expiration.
+ */
+export function OfferCard({
+  offer,
+  onPress,
+  pulse = false,
+}: {
+  offer: UrgentOfferDto;
+  onPress: () => void;
+  pulse?: boolean;
+}) {
   const t = useTheme();
   const left = useCountdown(offer.expiresAt);
   return (
-    <Card
-      onPress={onPress}
-      variant="outline"
-      style={{ gap: t.spacing.sm, borderColor: t.colors.tone.urgent.solid, borderWidth: 2 }}
-      accessibilityLabel={`Urgence : ${offer.problemReason}, à ${formatDistance(offer.distanceKm)}, gain net ${formatEuros(offer.estimatedEarningsCents)}, ${left} secondes pour répondre`}
-      accessibilityHint="Ouvre la demande pour accepter ou refuser"
-      testID={`offer-card-${offer.id}`}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
-        <Siren size={20} color={t.colors.tone.urgent.text} />
-        <Text variant="label" tone="urgent" style={{ flex: 1 }}>
-          Urgence · {left > 0 ? `${left} s pour répondre` : 'expirée'}
-        </Text>
-        <ChevronRight size={20} color={t.colors.text.secondary} />
-      </View>
-      <Text variant="title2">{offer.problemReason}</Text>
-      <View
-        style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm, flexWrap: 'wrap' }}
+    <Pulse active={pulse && left > 0}>
+      <Card
+        onPress={onPress}
+        variant="outline"
+        style={{ gap: t.spacing.sm, borderColor: t.colors.tone.urgent.solid, borderWidth: 2 }}
+        accessibilityLabel={`Urgence : ${offer.problemReason}, à ${formatDistance(offer.distanceKm)}, gain net ${formatEuros(offer.estimatedEarningsCents)}, ${left} secondes pour répondre`}
+        accessibilityHint="Ouvre la demande pour accepter ou refuser"
+        testID={`offer-card-${offer.id}`}
       >
-        <DomainChip domain={offer.domain} size="sm" />
-        <Text variant="callout" tone="secondary">
-          {formatDistance(offer.distanceKm)} · {offer.city}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
+          <Siren size={20} color={t.colors.tone.urgent.text} />
+          <Text variant="label" tone="urgent" style={{ flex: 1 }}>
+            Urgence · {left > 0 ? `${left} s pour répondre` : 'expirée'}
+          </Text>
+          <ChevronRight size={20} color={t.colors.text.secondary} />
+        </View>
+        <Text variant="title2">{offer.problemReason}</Text>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.sm,
+            flexWrap: 'wrap',
+          }}
+        >
+          <DomainChip domain={offer.domain} size="sm" />
+          <Text variant="callout" tone="secondary">
+            {formatDistance(offer.distanceKm)} · {offer.city}
+          </Text>
+        </View>
+        <Text variant="bodyStrong" tone="success">
+          Gain net estimé : {formatEuros(offer.estimatedEarningsCents)}
         </Text>
-      </View>
-      <Text variant="bodyStrong" tone="success">
-        Gain net estimé : {formatEuros(offer.estimatedEarningsCents)}
-      </Text>
-    </Card>
+      </Card>
+    </Pulse>
   );
 }

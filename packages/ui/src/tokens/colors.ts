@@ -5,7 +5,7 @@
 import type { DomainCode } from '@depano/schemas';
 
 export type ColorScheme = 'light' | 'dark';
-/** Accent de l'espace actif : client (brun sable) ou artisan (ardoise). */
+/** Espace actif (client / artisan) ; même habillage pour les deux depuis la refonte « maquettes ». */
 export type Accent = 'client' | 'artisan';
 
 export type Tone = 'neutral' | 'brand' | 'info' | 'success' | 'warning' | 'danger' | 'urgent';
@@ -56,8 +56,10 @@ export interface ThemeColors {
     primary: string;
     primaryPressed: string;
     onPrimary: string;
-    /** Beige #F1E4D3 en clair. */
+    /** Beige pêche #F3E7DA en clair (pastilles d'icône, boutons secondaires). */
     surface: string;
+    /** Bordure des éléments beige (bouton secondaire, chips de domaine). */
+    outline: string;
   };
   tone: Record<Tone, ToneColors>;
   domain: Record<DomainCode, DomainColors>;
@@ -72,30 +74,30 @@ export interface ThemeColors {
 /* ------------------------------------------------------------------ */
 
 const light = {
-  canvas: '#FCFAF7',
+  canvas: '#F8F4EF',
   surface: '#FFFFFF',
-  beige: '#F1E4D3',
-  subtle: '#F4EEE6',
-  ink: '#2A2118',
-  inkSecondary: '#6B5D4F',
-  border: '#E6DCCF',
-  borderInput: '#8F7E6C',
+  beige: '#F3E7DA',
+  subtle: '#F4EFE9',
+  ink: '#1E2124',
+  inkSecondary: '#625C56',
+  border: '#ECE4DA',
+  borderInput: '#8C8178',
 };
 
 const dark = {
-  canvas: '#16120E',
-  surface: '#1F1A15',
-  beige: '#2E261E',
-  subtle: '#29221B',
-  ink: '#F3ECE3',
-  inkSecondary: '#BFB2A3',
-  border: '#3A3128',
-  borderInput: '#8A7B6B',
+  canvas: '#141210',
+  surface: '#1E1B18',
+  beige: '#2E2720',
+  subtle: '#282420',
+  ink: '#F5F0EA',
+  inkSecondary: '#BDB3A8',
+  border: '#36302A',
+  borderInput: '#8A7F74',
 };
 
 const lightTones: Record<Tone, ToneColors> = {
-  neutral: { solid: '#4F4337', onSolid: '#FFFFFF', soft: '#EFE8DF', text: '#4F4337' },
-  brand: { solid: '#8A6A4A', onSolid: '#FFFFFF', soft: '#F1E4D3', text: '#6E5238' },
+  neutral: { solid: '#3E3934', onSolid: '#FFFFFF', soft: '#F1ECE6', text: '#3E3934' },
+  brand: { solid: '#1E2124', onSolid: '#FFFFFF', soft: '#F3E7DA', text: '#7A5534' },
   info: { solid: '#1F5FBF', onSolid: '#FFFFFF', soft: '#E6EEFA', text: '#1A4F9E' },
   success: { solid: '#1E7F4F', onSolid: '#FFFFFF', soft: '#E3F3EA', text: '#17663F' },
   // Ambre #B26B00 : réservé aux icônes / remplissages ; le texte utilise une teinte plus sombre.
@@ -128,16 +130,21 @@ const darkDomains: Record<DomainCode, DomainColors> = {
   energetique: { solid: '#F2994A', onSolid: '#2A1405', soft: '#3A2312', text: '#F5AC6B' },
 };
 
+type AccentColors = { primary: string; pressed: string; onPrimary: string; surface: string; text: string; soft: string; outline: string };
+
+/**
+ * Style DEPANO : CTA noir, surfaces beige pêche, texte de marque brun. Client et artisan partagent
+ * le même habillage (l'espace se distingue par ses onglets, pas par sa couleur).
+ */
+const sharedAccent: Record<ColorScheme, AccentColors> = {
+  light: { primary: '#1E2124', pressed: '#000000', onPrimary: '#FFFFFF', surface: '#F3E7DA', text: '#7A5534', soft: '#F3E7DA', outline: '#E3CFB9' },
+  dark: { primary: '#F5F0EA', pressed: '#D9D1C7', onPrimary: '#141210', surface: '#2E2720', text: '#E0BE98', soft: '#3A3027', outline: '#4A3E33' },
+};
+
 /** Accent par espace : remplace brand.* et tone.brand. */
-const accents: Record<Accent, Record<ColorScheme, { primary: string; pressed: string; onPrimary: string; surface: string; text: string; soft: string }>> = {
-  client: {
-    light: { primary: '#8A6A4A', pressed: '#74583D', onPrimary: '#FFFFFF', surface: '#F1E4D3', text: '#6E5238', soft: '#F1E4D3' },
-    dark: { primary: '#D1AD86', pressed: '#BF9A72', onPrimary: '#1D160F', surface: '#2E261E', text: '#D9B892', soft: '#3A2F24' },
-  },
-  artisan: {
-    light: { primary: '#3B4A5A', pressed: '#2C3845', onPrimary: '#FFFFFF', surface: '#E3E8EE', text: '#3B4A5A', soft: '#E3E8EE' },
-    dark: { primary: '#A9BCCF', pressed: '#93A8BD', onPrimary: '#0F1720', surface: '#1E252D', text: '#B4C6D8', soft: '#26303A' },
-  },
+const accents: Record<Accent, Record<ColorScheme, AccentColors>> = {
+  client: sharedAccent,
+  artisan: sharedAccent,
 };
 
 export function buildColors(scheme: ColorScheme, accent: Accent = 'client'): ThemeColors {
@@ -150,7 +157,7 @@ export function buildColors(scheme: ColorScheme, accent: Accent = 'client'): The
       surface: p.surface,
       brand: a.surface,
       subtle: p.subtle,
-      scrim: scheme === 'light' ? 'rgba(42,33,24,0.45)' : 'rgba(0,0,0,0.6)',
+      scrim: scheme === 'light' ? 'rgba(30,33,36,0.45)' : 'rgba(0,0,0,0.6)',
       inverse: p.ink,
     },
     text: {
@@ -158,33 +165,34 @@ export function buildColors(scheme: ColorScheme, accent: Accent = 'client'): The
       secondary: p.inkSecondary,
       brand: a.text,
       inverse: p.canvas,
-      disabled: scheme === 'light' ? '#A89A8B' : '#6E6255',
+      disabled: scheme === 'light' ? '#A79E95' : '#6E655C',
     },
     border: {
       subtle: p.border,
       input: p.borderInput,
-      focus: a.primary,
+      focus: a.text,
     },
     brand: {
       primary: a.primary,
       primaryPressed: a.pressed,
       onPrimary: a.onPrimary,
       surface: a.surface,
+      outline: a.outline,
     },
     tone: {
       ...tones,
       brand: { solid: a.primary, onSolid: a.onPrimary, soft: a.soft, text: a.text },
     },
     domain: scheme === 'light' ? lightDomains : darkDomains,
-    skeleton: scheme === 'light' ? '#EDE5DA' : '#2C251E',
-    shadow: scheme === 'light' ? 'rgba(42,33,24,0.14)' : 'rgba(0,0,0,0.5)',
+    skeleton: scheme === 'light' ? '#EFE8E0' : '#2A2521',
+    shadow: scheme === 'light' ? 'rgba(60,45,30,0.10)' : 'rgba(0,0,0,0.5)',
   };
 }
 
 /** Valeurs brutes du plan, exposées pour la doc et les tests. */
 export const RAW = {
-  brandPrimary: '#8A6A4A',
-  brandSurface: '#F1E4D3',
+  brandPrimary: '#1E2124',
+  brandSurface: '#F3E7DA',
   urgent: '#C8102E',
   success: '#1E7F4F',
   warning: '#B26B00',

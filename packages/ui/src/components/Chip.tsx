@@ -18,7 +18,7 @@ export interface ChipProps {
   accessibilityLabel?: string;
   testID?: string;
   /** Couleurs explicites (DomainChip). */
-  colors?: { bg: string; fg: string };
+  colors?: { bg: string; fg: string; border?: string };
 }
 
 export function Chip({ label, icon, tone = 'neutral', selected, onPress, size = 'md', accessibilityLabel, testID, colors }: ChipProps) {
@@ -26,12 +26,15 @@ export function Chip({ label, icon, tone = 'neutral', selected, onPress, size = 
   const toneC = t.colors.tone[tone];
   const bg = selected ? t.colors.brand.primary : colors?.bg ?? toneC.soft;
   const fg = selected ? t.colors.brand.onPrimary : colors?.fg ?? toneC.text;
+  const border = selected ? t.colors.brand.primary : colors?.border ?? (tone === 'brand' || tone === 'neutral' ? t.colors.brand.outline : toneC.soft);
   const body = (
     <View
       style={[
         styles.chip,
         {
           backgroundColor: bg,
+          borderColor: border,
+          borderWidth: 1,
           borderRadius: t.radius.full,
           paddingHorizontal: size === 'sm' ? t.spacing.sm : t.spacing.md,
           minHeight: size === 'sm' ? 28 : 36,

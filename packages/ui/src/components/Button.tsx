@@ -1,8 +1,10 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useTheme } from '../theme/ThemeProvider';
 import { MIN_TOUCH } from '../tokens/scale';
 import { haptic as runHaptic, type HapticKind } from '../utils/haptics';
+import { usePressScale } from '../utils/pressScale';
 import { Icon, type LucideIcon } from './Icon';
 import { Text } from './Text';
 
@@ -28,6 +30,9 @@ export interface ButtonProps {
   children?: ReactNode;
 }
 
+// Pressable animé : l'échelle au toucher passe par un style Reanimated.
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 const HEIGHT: Record<ButtonSize, number> = { sm: 40, md: MIN_TOUCH, lg: 56 };
 
 export function Button({
@@ -49,11 +54,14 @@ export function Button({
   const t = useTheme();
   const c = t.colors;
   const inactive = disabled || loading;
+  // État « pressé » tenu en React : le style fonction ({ pressed }) ne se combine pas avec un style animé.
+  const [pressed, setPressed] = useState(false);
+  const press = usePressScale(0.97);
 
   const palette: Record<ButtonVariant, { bg: string; bgPressed: string; fg: string; border?: string }> = {
     primary: { bg: c.brand.primary, bgPressed: c.brand.primaryPressed, fg: c.brand.onPrimary },
-    secondary: { bg: c.tone.brand.soft, bgPressed: c.background.subtle, fg: c.text.brand, border: c.tone.brand.soft },
-    ghost: { bg: 'transparent', bgPressed: c.background.subtle, fg: c.text.brand },
+    secondary: { bg: c.brand.surface, bgPressed: c.brand.outline, fg: c.text.primary, border: c.brand.outline },
+    ghost: { bg: 'transparent', bgPressed: c.background.subtle, fg: c.text.primary },
     danger: { bg: c.tone.danger.solid, bgPressed: c.tone.danger.text, fg: c.tone.danger.onSolid },
     urgent: { bg: c.tone.urgent.solid, bgPressed: c.tone.urgent.text, fg: c.tone.urgent.onSolid },
   };
@@ -62,7 +70,7 @@ export function Button({
   const iconSize = size === 'lg' ? 24 : 20;
 
   return (
-    <Pressable
+    <AnimatedPressable
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
@@ -70,20 +78,30 @@ export function Button({
       accessibilityState={{ disabled: inactive, busy: loading }}
       disabled={inactive}
       hitSlop={size === 'sm' ? 4 : undefined}
+      onPressIn={() => {
+        setPressed(true);
+        press.pressIn();
+      }}
+      onPressOut={() => {
+        setPressed(false);
+        press.pressOut();
+      }}
       onPress={() => {
         if (haptic) runHaptic(haptic);
         onPress?.();
       }}
-      style={({ pressed }) => [
+      style={[
         styles.base,
         {
           minHeight: HEIGHT[size],
           paddingHorizontal: size === 'sm' ? t.spacing.md : t.spacing.xl,
           borderRadius: t.radius.md,
-          backgroundColor: disabled ? c.background.subtle : pressed ? p.bgPressed : p.bg,
+          backgroundColor: disabled ? c.background.subtle : pressed && !inactive ? p.bgPressed : p.bg,
+          ...(p.border && !disabled ? { borderWidth: 1, borderColor: p.border } : null),
         },
         fullWidth && styles.fullWidth,
         style,
+        press.style,
       ]}
     >
       <View style={styles.row}>
@@ -103,7 +121,7 @@ export function Button({
         </Text>
         {iconRight && !loading ? <Icon icon={iconRight} size={iconSize} color={fg} /> : null}
       </View>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

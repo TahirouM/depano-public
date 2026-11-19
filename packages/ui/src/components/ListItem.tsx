@@ -48,7 +48,7 @@ export function ListItem({
   const a11y = accessibilityLabel ?? [title, subtitle, value, badge ? `${badge} non lus` : null].filter(Boolean).join(', ');
   const content = (
     <View style={[styles.row, { paddingHorizontal: t.spacing.lg, paddingVertical: t.spacing.md, gap: t.spacing.md }]}>
-      {left ?? (icon ? <Icon icon={icon} color={destructive ? fg : t.colors.text.secondary} /> : null)}
+      {left ?? (icon ? <Icon icon={icon} color={destructive ? fg : t.colors.text.primary} strokeWidth={1.75} /> : null)}
       <View style={styles.texts}>
         <Text variant="body" color={fg}>
           {title}

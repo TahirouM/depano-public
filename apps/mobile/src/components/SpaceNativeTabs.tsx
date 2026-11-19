@@ -20,7 +20,8 @@ export interface NativeTabDef {
 
 
 /**
- * Tab bar native (iOS : UITabBarController, Liquid Glass automatique sur iOS 26 ; Android : Material 3).
+ * Tab bar native (iOS : UITabBarController, Liquid Glass automatique sur iOS 26 ; Android : Material 3),
+ * icônes seules : le nom de l'onglet (et le nombre de non-lus) n'est donné qu'aux lecteurs d'écran.
  * Web : voir `_layout.web.tsx` (tab bar JS `AppTabBar`, la navigation native n'existe pas sur web).
  */
 export function SpaceNativeTabs({ as, tabs }: { as: 'client' | 'artisan'; tabs: NativeTabDef[] }) {
@@ -55,8 +56,8 @@ export function SpaceNativeTabs({ as, tabs }: { as: 'client' | 'artisan'; tabs: 
   const platformProps = useMemo<Partial<NativeTabsProps>>(() => {
     if (Platform.OS === 'ios') {
       // Le verre passe du clair au sombre selon le contenu dessous : couleur dynamique, pas de valeur figée.
-      const light = buildColors('light', t.accent).text.brand;
-      const dark = buildColors('dark', t.accent).text.brand;
+      const light = buildColors('light', t.accent).text.primary;
+      const dark = buildColors('dark', t.accent).text.primary;
       return {
         tintColor: DynamicColorIOS({ light, dark }),
         badgeBackgroundColor: t.colors.tone.urgent.solid,
@@ -68,14 +69,15 @@ export function SpaceNativeTabs({ as, tabs }: { as: 'client' | 'artisan'; tabs: 
     const font = t.fonts ? { fontFamily: t.fonts.medium } : null;
     return {
       backgroundColor: t.colors.background.surface,
-      tintColor: t.colors.text.brand,
-      iconColor: { default: t.colors.text.secondary, selected: t.colors.text.brand },
-      labelStyle: { default: { ...font, color: t.colors.text.secondary }, selected: { ...font, color: t.colors.text.brand } },
-      indicatorColor: t.colors.tone.brand.soft,
+      tintColor: t.colors.text.primary,
+      iconColor: { default: t.colors.text.secondary, selected: t.colors.text.primary },
+      labelStyle: { default: { ...font, color: t.colors.text.secondary }, selected: { ...font, color: t.colors.text.primary } },
+      indicatorColor: t.colors.brand.surface,
       rippleColor: t.colors.background.subtle,
       badgeBackgroundColor: t.colors.tone.urgent.solid,
       badgeTextColor: t.colors.tone.urgent.onSolid,
-      labelVisibilityMode: 'labeled',
+      // Icônes seules : le libellé reste lu par TalkBack (accessibilityLabel du Trigger).
+      labelVisibilityMode: 'unlabeled',
     };
   }, [t]);
 
@@ -98,7 +100,8 @@ export function SpaceNativeTabs({ as, tabs }: { as: 'client' | 'artisan'; tabs: 
                 accessibilityLabel={tabAccessibilityLabel(tab.label, count)}
               >
                 <NativeTabs.Trigger.Icon sf={tab.sf} md={tab.md} />
-                <NativeTabs.Trigger.Label>{tab.label}</NativeTabs.Trigger.Label>
+                {/* Icônes seules (titre vide côté natif) : VoiceOver/TalkBack lisent accessibilityLabel. */}
+                <NativeTabs.Trigger.Label hidden>{tab.label}</NativeTabs.Trigger.Label>
                 <NativeTabs.Trigger.Badge hidden={!count}>{count ? tabBadgeText(count) : undefined}</NativeTabs.Trigger.Badge>
               </NativeTabs.Trigger>
             );

@@ -21,7 +21,7 @@ export function DomainChip({ domain, size = 'md', selected, onPress }: DomainChi
       size={size}
       selected={selected}
       onPress={onPress}
-      colors={{ bg: c.soft, fg: c.text }}
+      colors={{ bg: c.soft, fg: c.text, border: c.soft }}
     />
   );
 }

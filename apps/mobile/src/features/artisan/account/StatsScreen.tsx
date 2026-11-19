@@ -13,6 +13,7 @@ import { Stack } from 'expo-router';
 import { useMemo } from 'react';
 import { View } from 'react-native';
 import { QueryView } from '@/components/QueryView';
+import { features } from '@/lib/env';
 import { BarChart } from '../components/BarChart';
 import { useArtisanProfile, useStats } from '../queries';
 
@@ -101,14 +102,14 @@ function StatsBody({
         <Card
           style={{ flex: 1, gap: 4 }}
           padding="md"
-          accessibilityLabel={`Taux d'acceptation des urgences : ${pct(s.acceptanceRate)}`}
+          accessibilityLabel={`Taux d'acceptation ${features.urgent ? 'des urgences' : 'des demandes'} : ${pct(s.acceptanceRate)}`}
         >
           <Text variant="caption" tone="secondary">
             Taux d'acceptation
           </Text>
           <Text variant="title1">{pct(s.acceptanceRate)}</Text>
           <Text variant="caption" tone="secondary">
-            des urgences reçues
+            {features.urgent ? 'des urgences reçues' : 'des demandes reçues'}
           </Text>
         </Card>
         <Card
@@ -152,7 +153,7 @@ function StatsBody({
           <Text variant="bodyStrong">Fiabilité : {reliability} / 100</Text>
           <Text variant="callout" tone="secondary">
             {RULES.artisanReliability.maxCancellationsIn30Days} annulations en 30 jours suspendent
-            la réception des urgences.
+            la réception {features.urgent ? 'des urgences' : 'de nouvelles demandes'}.
           </Text>
         </Card>
       ) : null}

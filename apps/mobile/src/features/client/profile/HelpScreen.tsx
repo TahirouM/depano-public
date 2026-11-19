@@ -1,17 +1,27 @@
+import { formatEuros, RULES } from '@depano/schemas';
 import { Card, Divider, ListItem, Screen, SectionHeader, Text, useTheme } from '@depano/ui';
 import { router, Stack } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { ChevronDown, ChevronUp, FileText, Gavel, ListOrdered, Mail, MessageCircleQuestion } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
+import { features } from '@/lib/env';
 
 const FAQ = [
   { q: 'Quand suis-je débité ?', a: "Uniquement à la fin, quand vous donnez le code à 4 chiffres à l'artisan. Avant, c'est une simple empreinte bancaire : rien n'est prélevé." },
   { q: 'Le prix peut-il changer ?', a: "L'artisan établit un devis détaillé sur place, que vous validez dans l'app avant tout travail. Au-delà de 20 % du montant annoncé, une nouvelle validation est obligatoire." },
-  { q: 'Puis-je annuler ?', a: "Oui, gratuitement jusqu'à 2 h avant un rendez-vous et pendant la recherche d'un artisan. Ensuite, seuls les frais de déplacement sont dus, sauf garantie annulation (10 €) ou retard de l'artisan de plus de 30 min." },
+  {
+    q: 'Puis-je annuler ?',
+    a: `Oui, gratuitement pendant ${RULES.cancellation.freeWithinHoursAfterBooking} h après la prise de rendez-vous, et tant que l'artisan ne l'a pas confirmé. Ensuite, seuls les frais de déplacement sont dus, sauf garantie annulation (${formatEuros(RULES.cancellationGuaranteeCents)}) ou retard de l'artisan de plus de ${RULES.cancellation.lateArtisanMinutes} min.`,
+  },
   { q: "L'artisan n'est jamais venu", a: "Ouvrez l'intervention puis « Que s'est-il passé ? ». Le paiement est gelé et notre équipe tranche sous 72 h." },
   { q: 'Les artisans sont-ils vérifiés ?', a: 'Oui : SIRET actif, pièce d’identité et assurance contrôlés par notre équipe avant toute mise en ligne, puis suivi de la fiabilité.' },
-  { q: 'Droit de rétractation', a: "Pour une urgence demandée expressément, il ne s'applique pas (réparation urgente à domicile). Pour un rendez-vous planifié, vous disposez de 14 jours." },
+  {
+    q: 'Droit de rétractation',
+    a: features.urgent
+      ? "Pour une urgence demandée expressément, il ne s'applique pas (réparation urgente à domicile). Pour un rendez-vous planifié, vous disposez de 14 jours."
+      : 'Pour un rendez-vous planifié, vous disposez de 14 jours à compter de la réservation.',
+  },
 ];
 
 /** Aide client : FAQ, contact, médiateur de la consommation, classement des artisans. */

@@ -308,8 +308,14 @@ export default function ArtisanDetailPage({ params }: { params: Promise<{ id: st
                 </TableHeader>
                 <TableBody>
                   {a.services.map((s) => (
-                    <TableRow key={s.serviceId}>
-                      <TableCell>{s.name}</TableCell>
+                    <TableRow key={s.serviceId} className={s.active ? undefined : 'text-muted-foreground'}>
+                      <TableCell>
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          {s.name}
+                          {s.custom && <ToneChip tone="info">Motif personnel</ToneChip>}
+                          {!s.active && <ToneChip tone="neutral">Désactivé</ToneChip>}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <DomainChip domain={s.domain} />
                       </TableCell>

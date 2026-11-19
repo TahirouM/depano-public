@@ -1,0 +1,27 @@
+# Généré par deploy.sh — HTTPS automatique (Let's Encrypt) via sslip.io.
+
+api.${HOST_SUFFIX} {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}
+
+admin.${HOST_SUFFIX} {
+	encode gzip
+	basicauth {
+		${ADMIN_BASIC_USER} ${ADMIN_BASIC_HASH}
+	}
+	reverse_proxy 127.0.0.1:3001
+}
+
+s3.${HOST_SUFFIX} {
+	reverse_proxy 127.0.0.1:9000
+}
+
+app.${HOST_SUFFIX} {
+	encode gzip
+	root * /opt/depano/web
+	@immutable path /_expo/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+	try_files {path} /index.html
+	file_server
+}

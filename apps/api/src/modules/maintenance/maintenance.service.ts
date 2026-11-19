@@ -6,6 +6,7 @@ import { StorageService } from '../../infra/storage';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ChatService } from '../chat/chat.service';
 import { ReliabilityService } from './reliability.service';
+import { PromotionService } from '../artisan/promotion.service';
 import { addDays, parisDate } from '../../common/time';
 
 const RETAINED_PURPOSES = ['problem_photo', 'problem_voice', 'report_before', 'report_after', 'chat'] as const;
@@ -16,7 +17,7 @@ const DOC_LABELS: Record<string, string> = {
   qualification: 'Qualification',
 };
 
-/** Tâches récurrentes : expiration des documents, purge RGPD, fiabilité artisans. */
+/** Tâches récurrentes : expiration des documents, purge RGPD, fiabilité artisans, renouvellement des promotions. */
 @Injectable()
 export class MaintenanceService {
   private readonly logger = new Logger('Maintenance');
@@ -27,6 +28,7 @@ export class MaintenanceService {
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
     @Inject(ChatService) private readonly chat: ChatService,
     @Inject(ReliabilityService) private readonly reliability: ReliabilityService,
+    @Inject(PromotionService) private readonly promotion: PromotionService,
   ) {}
 
   async documentExpiry(now = new Date()) {
@@ -88,5 +90,10 @@ export class MaintenanceService {
 
   reliabilitySweep() {
     return this.reliability.sweep();
+  }
+
+  /** Renouvellement des mises en avant échues (prestataire factice ; Stripe renouvelle via invoice.paid). */
+  promotionRenewal() {
+    return this.promotion.renewExpired();
   }
 }

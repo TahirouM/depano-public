@@ -18,6 +18,8 @@ function resolveApiUrl(): string {
 
 export const env = {
   apiUrl: resolveApiUrl(),
+  /** Démo statique sans serveur (Vercel) : l'API est simulée par src/lib/demo. */
+  demo: process.env.EXPO_PUBLIC_DEMO === '1',
   appVersion: Constants.expoConfig?.version ?? '0.0.0',
   google: {
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || undefined,
@@ -38,4 +40,9 @@ export const features = {
   appleSignIn: Platform.OS === 'ios',
   /** Passkeys : endpoints présents côté API, UI à venir (expo-passkeys / module natif). */
   passkeys: false,
+  /**
+   * Urgences (recherche d'artisan immédiate, disponibilité urgence de l'artisan). Masquées tant que le
+   * volume quotidien ne suffit pas : EXPO_PUBLIC_FEATURE_URGENT=1 pour les réactiver. Le code reste en place.
+   */
+  urgent: process.env.EXPO_PUBLIC_FEATURE_URGENT === '1',
 } as const;

@@ -23,6 +23,7 @@ export const ADMIN_BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
 
 export const BOOKING_STATUS_TONES: Record<BookingStatus, Tone> = {
   pending_payment: 'neutral',
+  requested: 'warning',
   searching: 'info',
   accepted: 'info',
   en_route: 'info',

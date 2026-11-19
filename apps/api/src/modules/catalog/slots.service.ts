@@ -7,8 +7,8 @@ import { addDays, minutes, parisDate, parisToUtc, weekdayOf } from '../../common
 export const SLOT_STEP_MINUTES = 30;
 /** Délai minimal avant un créneau réservable. */
 export const SLOT_MIN_NOTICE_MINUTES = 60;
-/** Statuts qui occupent l'agenda (identiques à la contrainte bookings_no_overlap). */
-export const BLOCKING_STATUSES = ['pending_payment', 'accepted', 'en_route', 'arrived', 'quote_pending', 'in_progress', 'awaiting_code'] as const;
+/** Statuts qui occupent l'agenda (identiques à la contrainte bookings_no_overlap). Les indisponibilités et événements personnels bloquent aussi. */
+export const BLOCKING_STATUSES = ['pending_payment', 'requested', 'accepted', 'en_route', 'arrived', 'quote_pending', 'in_progress', 'awaiting_code'] as const;
 
 interface Busy {
   start: number;

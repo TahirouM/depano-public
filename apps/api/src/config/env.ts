@@ -51,6 +51,8 @@ const EnvSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional().default(''),
   STRIPE_WEBHOOK_SECRET: z.string().optional().default(''),
   STRIPE_PUBLISHABLE_KEY: z.string().optional().default(''),
+  /** Prix récurrent Stripe (mensuel) de l'abonnement « Promouvoir mon compte ». */
+  STRIPE_PROMOTION_PRICE_ID: z.string().optional().default(''),
   TWILIO_ACCOUNT_SID: z.string().optional().default(''),
   TWILIO_AUTH_TOKEN: z.string().optional().default(''),
   TWILIO_FROM_NUMBER: z.string().optional().default(''),
@@ -63,6 +65,10 @@ const EnvSchema = z.object({
   RATE_LIMIT_DISABLED: bool,
   /** Hors production : multiplie les plafonds (défaut 20 en développement, 1 en test ; ignoré en production). */
   RATE_LIMIT_MULTIPLIER: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.coerce.number().positive().optional()),
+  /** Phase de test : renvoie le code OTP à l'app même en production (aucun SMS requis). À désactiver avant l'ouverture. */
+  OTP_EXPOSE_CODE: bool,
+  /** Phase de test : un artisan peut soumettre son dossier sans SIRET. */
+  ARTISAN_SIRET_OPTIONAL: bool,
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 

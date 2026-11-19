@@ -1,4 +1,4 @@
-import { formatEuros, type BookingDetailDto } from '@depano/schemas';
+import { formatEuros, RULES, type BookingDetailDto } from '@depano/schemas';
 import { BottomSheet, Button, Card, Chip, Icon, Text, useTheme, useToast } from '@depano/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, Info } from 'lucide-react-native';
@@ -67,7 +67,7 @@ export function CancelSheet({ booking: b, visible, onClose, onCancelled }: Cance
                 ? b.withGuarantee
                   ? 'Votre garantie annulation couvre cette annulation.'
                   : "Votre empreinte bancaire est libérée, rien n'est prélevé."
-                : "Moins de 2 h avant l'intervention (ou artisan en route), seuls les frais de déplacement sont dus. Rien d'autre n'est prélevé."}
+                : `L'annulation n'est gratuite que pendant ${RULES.cancellation.freeWithinHoursAfterBooking} h après la prise de rendez-vous (sans garantie annulation) : seuls les frais de déplacement sont dus. Rien d'autre n'est prélevé.`}
             </Text>
           </View>
         </Card>

@@ -3,6 +3,7 @@ import {
   DEEP_LINKS,
   REALTIME_ROOMS,
   TERMINAL_BOOKING_STATUSES,
+  chatIsOpen,
   type BookingStatus,
   type ConversationDto,
   type DomainCode,
@@ -32,7 +33,10 @@ export class ChatService {
     @Inject(NotificationsService) private readonly notifications: NotificationsService,
   ) {}
 
-  /** Crée (idempotent) la conversation d'une intervention dès qu'un artisan est assigné. */
+  /**
+   * Crée (idempotent) la conversation d'une intervention : acceptation d'une urgence, acceptation (ou chiffrage)
+   * d'une demande de RDV par l'artisan, report proposé par l'artisan.
+   */
   async ensureConversation(db: DbOrTx, bookingId: string, clientUserId: string, artisanUserId: string) {
     await db.insert(conversations).values({ bookingId, clientUserId, artisanUserId }).onConflictDoNothing({ target: conversations.bookingId });
     const [c] = await db.select().from(conversations).where(eq(conversations.bookingId, bookingId));
@@ -102,7 +106,14 @@ export class ChatService {
       .select({ c: conversations, b: { reference: bookings.reference, status: bookings.status, domain: bookings.domain } })
       .from(conversations)
       .innerJoin(bookings, eq(bookings.id, conversations.bookingId))
-      .where(or(eq(conversations.clientUserId, userId), eq(conversations.artisanUserId, userId)))
+      .where(
+        and(
+          or(eq(conversations.clientUserId, userId), eq(conversations.artisanUserId, userId)),
+          // Même règle que chatIsOpen() : rien avant l'acceptation de la demande par l'artisan.
+          sql`${bookings.status} not in ('requested', 'searching', 'expired')`,
+          sql`(${bookings.status} <> 'pending_payment' or ${bookings.artisanAcceptedAt} is not null)`,
+        ),
+      )
       .orderBy(desc(sql`coalesce(${conversations.lastMessageAt}, ${conversations.createdAt})`))
       .limit(200);
     const out: ConversationDto[] = [];
@@ -153,13 +164,22 @@ export class ChatService {
     return { items: await this.toMessageDtos(items, c, userId), nextCursor: rows.length > limit ? (items[items.length - 1]?.id ?? null) : null };
   }
 
-  /** Messagerie ouverte tant que l'intervention n'est pas terminée, puis 7 jours. */
+  /** Messagerie ouverte dès l'acceptation par l'artisan, tant que l'intervention n'est pas terminée, puis 7 jours. */
   private async assertOpen(bookingId: string) {
     const [b] = await this.conn.db
-      .select({ status: bookings.status, closedAt: bookings.closedAt, cancelledAt: bookings.cancelledAt, updatedAt: bookings.updatedAt })
+      .select({
+        status: bookings.status,
+        artisanAcceptedAt: bookings.artisanAcceptedAt,
+        closedAt: bookings.closedAt,
+        cancelledAt: bookings.cancelledAt,
+        updatedAt: bookings.updatedAt,
+      })
       .from(bookings)
       .where(eq(bookings.id, bookingId));
     if (!b) throw notFound('booking_not_found', 'Intervention introuvable.');
+    if (!chatIsOpen({ status: b.status as BookingStatus, artisanAcceptedAt: b.artisanAcceptedAt })) {
+      throw forbidden('conversation_not_open', "La messagerie s'ouvrira dès que l'artisan aura accepté la demande.");
+    }
     if (!TERMINAL_BOOKING_STATUSES.includes(b.status as BookingStatus)) return;
     const end = b.closedAt ?? b.cancelledAt ?? b.updatedAt;
     if (Date.now() - end.getTime() > CHAT_OPEN_DAYS_AFTER_END * 86_400_000) {

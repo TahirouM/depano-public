@@ -5,6 +5,7 @@ import { LocateFixed, MapPin } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { api } from '@/lib/api';
+import { features } from '@/lib/env';
 import { getUserPosition, MARSEILLE } from '@/lib/permissions';
 import { qk } from '@/lib/query/keys';
 import { RadiusPicker } from './RadiusPicker';
@@ -133,7 +134,9 @@ export function ZoneEditor({
       <View style={{ gap: t.spacing.xs }}>
         <Text variant="label">Rayon d'intervention</Text>
         <Text variant="callout" tone="secondary">
-          Vous recevez les urgences situées dans ce rayon autour de votre position.
+          {features.urgent
+            ? 'Vous recevez les urgences situées dans ce rayon autour de votre position.'
+            : 'Vous recevez les demandes des clients situés dans ce rayon autour de votre adresse.'}
         </Text>
       </View>
       <RadiusPicker

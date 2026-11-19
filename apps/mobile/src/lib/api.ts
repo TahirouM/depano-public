@@ -2,8 +2,12 @@ import { ApiError, createApiClient, type AuthTokens } from '@depano/schemas';
 import { useAuthStore } from '@/stores/auth';
 import { env } from './env';
 
+// Démo statique : faux backend chargé seulement si EXPO_PUBLIC_DEMO=1 (variable remplacée au build).
+const demoFetch: typeof fetch | undefined =
+  process.env.EXPO_PUBLIC_DEMO === '1' ? (require('./demo/backend') as typeof import('./demo/backend')).demoFetch : undefined;
+
 /** Client sans gestion du 401 : sert uniquement au rafraîchissement des jetons. */
-const bare = createApiClient({ baseUrl: env.apiUrl, getAccessToken: () => null });
+const bare = createApiClient({ baseUrl: env.apiUrl, getAccessToken: () => null, fetch: demoFetch });
 
 let inflight: Promise<boolean> | null = null;
 /** Appelé quand la session est définitivement perdue (refresh refusé). */
@@ -44,6 +48,7 @@ export const api = createApiClient({
   baseUrl: env.apiUrl,
   getAccessToken: () => useAuthStore.getState().accessToken,
   onUnauthorized: refreshTokens,
+  fetch: demoFetch,
 });
 
 export type Api = typeof api;

@@ -16,6 +16,8 @@ export interface ReasonPickerProps {
   /** Prix affiché à droite de chaque motif (centimes), si connu. */
   priceFor?: (s: ServiceDto) => string | null;
   loading?: boolean;
+  /** Personnalisation de « Autre problème » (RDV : besoin hors catalogue, prix sur devis). */
+  other?: { label?: string; subtitle?: string; fieldLabel?: string; placeholder?: string; helper?: string; maxLength?: number; multiline?: boolean };
 }
 
 function Option({ title, subtitle, selected, onPress, icon, testID }: { title: string; subtitle?: string | null; selected: boolean; onPress: () => void; icon?: typeof PenLine; testID?: string }) {
@@ -55,7 +57,7 @@ function Option({ title, subtitle, selected, onPress, icon, testID }: { title: s
 }
 
 /** Motifs prédéfinis (prestations du métier) + « Autre problème » en texte libre. */
-export function ReasonPicker({ services, value, onChange, priceFor, loading }: ReasonPickerProps) {
+export function ReasonPicker({ services, value, onChange, priceFor, loading, other }: ReasonPickerProps) {
   const t = useTheme();
   if (loading || !services) {
     return (
@@ -80,18 +82,21 @@ export function ReasonPicker({ services, value, onChange, priceFor, loading }: R
       ))}
       <Option
         testID="reason-other"
-        title="Autre problème"
+        title={other?.label ?? 'Autre problème'}
+        subtitle={other?.subtitle}
         icon={PenLine}
         selected={!!value.customReason}
         onPress={() => onChange({ serviceId: undefined, problemReason: '', customReason: true })}
       />
       {value.customReason ? (
         <TextField
-          label="En quelques mots"
+          label={other?.fieldLabel ?? 'En quelques mots'}
           value={value.problemReason ?? ''}
-          onChangeText={(v) => onChange({ serviceId: undefined, problemReason: v.slice(0, 120), customReason: true })}
-          placeholder="Ex. : radiateur qui fuit"
-          maxLength={120}
+          onChangeText={(v) => onChange({ serviceId: undefined, problemReason: v.slice(0, other?.maxLength ?? 120), customReason: true })}
+          placeholder={other?.placeholder ?? 'Ex. : radiateur qui fuit'}
+          helper={other?.helper}
+          maxLength={other?.maxLength ?? 120}
+          multiline={other?.multiline}
           autoFocus
           testID="reason-custom"
         />

@@ -19,6 +19,17 @@ describe('resolveDeepLink', () => {
     expect(resolveDeepLink(DEEP_LINKS.offer('o1'), 'artisan')).toBe('/pro/offre/o1');
     expect(resolveDeepLink(DEEP_LINKS.artisan('a1'), 'client')).toBe('/artisan/a1');
   });
+  it('onglets client : rendez-vous, interventions réalisées, parrainage', () => {
+    expect(resolveDeepLink('depano://rendez-vous', 'client')).toBe('/activite');
+    expect(resolveDeepLink('depano://rendez-vous/b1', 'client')).toBe('/activite/b1');
+    expect(resolveDeepLink('depano://interventions', 'client')).toBe('/interventions');
+    expect(resolveDeepLink('depano://interventions/b1', 'client')).toBe('/interventions/b1');
+    expect(resolveDeepLink('depano://interventions/b1', 'artisan')).toBe('/pro/interventions/b1');
+    expect(resolveDeepLink('depano://parrainage', 'client')).toBe('/profil/parrainage');
+    // La recherche n'est plus un onglet mais garde son URL.
+    expect(resolveDeepLink('depano://recherche', 'client')).toBe('/recherche');
+    expect(resolveDeepLink('depano://artisan', 'client')).toBe('/recherche');
+  });
   it('lien vide', () => {
     expect(resolveDeepLink(null, 'client')).toBeNull();
     expect(resolveDeepLink('depano://', 'client')).toBeNull();

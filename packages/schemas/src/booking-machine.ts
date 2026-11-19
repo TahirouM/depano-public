@@ -18,10 +18,19 @@ const SYSTEM: Actor[] = ['system'];
 const SUPPORT: Actor[] = ['support'];
 
 export const BOOKING_TRANSITIONS: readonly Transition[] = [
-  // Empreinte bancaire validée
+  // Empreinte bancaire validée : l'urgence part au dispatch, le RDV attend la réponse de l'artisan
+  // (ou est confirmé directement si l'artisan a déjà accepté : prix proposé, report).
   { from: 'pending_payment', to: 'searching', actors: SYSTEM, kinds: ['urgent'] },
+  { from: 'pending_payment', to: 'requested', actors: SYSTEM, kinds: ['scheduled'] },
   { from: 'pending_payment', to: 'accepted', actors: SYSTEM, kinds: ['scheduled'] },
   { from: 'pending_payment', to: 'cancelled_by_client', actors: [...CLIENT, 'system'] },
+
+  // Demande de RDV : l'artisan accepte, refuse, ou chiffre une demande « Autre » (le client paie alors le prix proposé)
+  { from: 'requested', to: 'accepted', actors: ARTISAN, kinds: ['scheduled'] },
+  { from: 'requested', to: 'pending_payment', actors: ARTISAN, kinds: ['scheduled'] },
+  { from: 'requested', to: 'cancelled_by_artisan', actors: ARTISAN },
+  { from: 'requested', to: 'cancelled_by_client', actors: CLIENT },
+  { from: 'requested', to: 'expired', actors: SYSTEM },
 
   // Dispatch urgence
   { from: 'searching', to: 'accepted', actors: [...ARTISAN, 'system'], kinds: ['urgent'] },
@@ -40,7 +49,7 @@ export const BOOKING_TRANSITIONS: readonly Transition[] = [
   { from: 'arrived', to: 'quote_pending', actors: ARTISAN },
   { from: 'quote_pending', to: 'in_progress', actors: CLIENT },
   { from: 'quote_pending', to: 'arrived', actors: [...CLIENT, 'system'] }, // devis refusé ou expiré
-  // « Déplacement seulement » : l'artisan clôture sans travaux, frais de déplacement uniquement
+  // « Déplacement seulement » / intervention non réalisable : frais de déplacement uniquement
   { from: 'arrived', to: 'awaiting_code', actors: ARTISAN },
 
   // Fin des travaux
@@ -80,7 +89,14 @@ export function nextStatuses(from: BookingStatus, actor: Actor, kind: BookingKin
 
 /** L'artisan ne voit l'adresse exacte du client qu'à partir de l'acceptation. */
 export function artisanCanSeeExactAddress(status: BookingStatus): boolean {
-  return !['pending_payment', 'searching', 'expired'].includes(status);
+  return !['pending_payment', 'requested', 'searching', 'expired'].includes(status);
+}
+
+/** La messagerie n'est ouverte qu'une fois la demande acceptée (ou chiffrée) par l'artisan. */
+export function chatIsOpen(b: { status: BookingStatus; artisanAcceptedAt: Date | string | null }): boolean {
+  if (['requested', 'searching', 'expired'].includes(b.status)) return false;
+  if (b.status === 'pending_payment') return b.artisanAcceptedAt != null;
+  return true;
 }
 
 /**

@@ -14,12 +14,13 @@ import {
   type QualificationBadge,
   type ServiceDto,
 } from '@depano/schemas';
-import { and, artisanProfiles, artisanServices, asc, domains, eq, services, sql } from '@depano/db';
+import { and, artisanProfiles, artisanServices, asc, domains, eq, isNull, services, sql } from '@depano/db';
 import type { SQL } from 'drizzle-orm';
 import { DbConnection } from '../../infra/db';
 import { AppConfig } from '../../config/config.service';
 import { FilesService } from '../files/files.service';
 import { SlotsService } from './slots.service';
+import { artisanServiceColumns, offeredBy, toArtisanServiceDto } from './offer';
 import { ReviewsService } from './reviews.service';
 import { notFound } from '../../common/errors';
 import { decodeOffset, paginate } from '../../common/pagination';
@@ -55,6 +56,7 @@ interface CardRow extends Record<string, unknown> {
   approx_lat: number | null;
   approx_lng: number | null;
   insured: boolean;
+  promoted: boolean;
 }
 
 /** postgres.js renvoie les tableaux d'enum sous forme de littéral « {a,b} ». */
@@ -78,7 +80,8 @@ export class CatalogService {
   async domains(): Promise<DomainDto[]> {
     const [ds, ss] = await Promise.all([
       this.conn.db.select().from(domains).orderBy(asc(domains.sortOrder)),
-      this.conn.db.select().from(services).where(eq(services.active, true)).orderBy(asc(services.sortOrder), asc(services.name)),
+      // Catalogue DEPANO uniquement : les motifs personnels des artisans n'y figurent pas.
+      this.conn.db.select().from(services).where(and(eq(services.active, true), isNull(services.ownerArtisanId))).orderBy(asc(services.sortOrder), asc(services.name)),
     ]);
     return ds.map((d) => ({
       code: d.code as DomainCode,
@@ -93,9 +96,10 @@ export class CatalogService {
     return sql`
       select a.id, a.display_name, a.company_name, a.domains, a.rating_avg, a.rating_count, a.urgent_available,
         a.urgent_suspended_until, a.siret, a.company_active, a.qualifications, u.avatar_file_id, a.created_at,
+        coalesce(a.pro_until > now(), false) as promoted,
         round(a.base_lat::numeric, 2)::float8 as approx_lat, round(a.base_lng::numeric, 2)::float8 as approx_lng,
         (select min(s.price_cents) from artisan_services s join services sv on sv.id = s.service_id
-           where s.artisan_id = a.id and sv.active ${opts.domain ? sql`and sv.domain = ${opts.domain}::domain_code` : sql``})::int as from_price,
+           where s.artisan_id = a.id and s.active and sv.active and (sv.owner_artisan_id is null or sv.owner_artisan_id = a.id) ${opts.domain ? sql`and sv.domain = ${opts.domain}::domain_code` : sql``})::int as from_price,
         ${hasPoint ? sql`(ST_Distance(a.base_location, ${point(opts.lat!, opts.lng!)}) / 1000.0)::float8` : sql`null::float8`} as distance_km,
         exists (select 1 from artisan_documents d where d.artisan_id = a.id and d.status = 'approved'
           and d.type in ('insurance_decennale', 'insurance_rc_pro') and (d.expires_at is null or d.expires_at >= current_date)) as insured
@@ -125,6 +129,7 @@ export class CatalogService {
           insured: !!r.insured,
           qualifications: pgArray(r.qualifications) as QualificationBadge[],
         },
+        promoted: !!r.promoted,
       })),
     );
   }
@@ -147,7 +152,8 @@ export class CatalogService {
     if (q.q?.trim()) {
       const like = `%${q.q.trim().replace(/[%_]/g, '')}%`;
       conds.push(sql`(a.display_name ilike ${like} or a.company_name ilike ${like} or a.bio ilike ${like}
-        or exists (select 1 from artisan_services s join services sv on sv.id = s.service_id where s.artisan_id = a.id and sv.name ilike ${like}))`);
+        or exists (select 1 from artisan_services s join services sv on sv.id = s.service_id
+          where s.artisan_id = a.id and s.active and sv.active and sv.name ilike ${like}))`);
     }
     if (hasPoint) conds.push(sql`ST_DWithin(a.base_location, ${point(q.lat!, q.lng!)}, ${q.radiusKm * 1000})`);
     if (q.minRating != null) conds.push(sql`coalesce(a.rating_avg, 0) >= ${q.minRating}`);
@@ -164,7 +170,8 @@ export class CatalogService {
           ? sql`rating_avg desc nulls last, rating_count desc`
           : q.sort === 'price'
             ? sql`from_price asc nulls last`
-            : sql`(coalesce(rating_avg, 4) * 2 - coalesce(distance_km, 0) * 0.3 + case when urgent_available then 0.5 else 0 end + least(rating_count, 200) / 100.0) desc`;
+            : // Pertinence : profils mis en avant (abonnement « Promouvoir mon compte ») en tête.
+              sql`promoted desc, (coalesce(rating_avg, 4) * 2 - coalesce(distance_km, 0) * 0.3 + case when urgent_available then 0.5 else 0 end + least(rating_count, 200) / 100.0) desc`;
     const rows = await this.conn.db.execute<CardRow>(sql`
       select * from (${inner}) t
       where ${q.maxPriceCents != null ? sql`t.from_price <= ${q.maxPriceCents}` : sql`true`}
@@ -186,18 +193,19 @@ export class CatalogService {
     const [card] = await this.toCards([row]);
     const [p] = await this.conn.db.select().from(artisanProfiles).where(eq(artisanProfiles.id, id));
     const svc = await this.conn.db
-      .select({ serviceId: services.id, name: services.name, domain: services.domain, priceCents: artisanServices.priceCents, durationMinutes: artisanServices.durationMinutes })
+      .select(artisanServiceColumns)
       .from(artisanServices)
       .innerJoin(services, eq(services.id, artisanServices.serviceId))
-      .where(and(eq(artisanServices.artisanId, id), eq(services.active, true)))
-      .orderBy(asc(services.domain), asc(services.sortOrder));
+      .where(offeredBy(id))
+      .orderBy(asc(services.domain), asc(services.sortOrder), asc(services.name));
     return {
       ...card!,
       bio: p!.bio,
+      bannerUrl: await this.filesService.signedUrl(p!.bannerFileId),
       city: p!.baseCity,
       radiusKm: p!.radiusKm,
       travelFeeCents: p!.travelFeeCents,
-      services: svc.map((s) => ({ ...s, domain: s.domain as DomainCode })),
+      services: svc.map(toArtisanServiceDto),
       portfolioUrls: await this.filesService.signedUrls(p!.portfolioFileIds),
       recentReviews: await this.reviewsService.recent(id, 5),
       memberSince: (p!.approvedAt ?? p!.createdAt).toISOString(),
@@ -218,18 +226,19 @@ export class CatalogService {
       const [as] = await db
         .select({ p: artisanServices.priceCents })
         .from(artisanServices)
-        .where(and(eq(artisanServices.artisanId, body.artisanId), eq(artisanServices.serviceId, body.serviceId)));
+        .innerJoin(services, eq(services.id, artisanServices.serviceId))
+        .where(and(offeredBy(body.artisanId), eq(artisanServices.serviceId, body.serviceId)));
       if (as) basePriceCents = as.p;
     }
     if (!basePriceCents && body.serviceId) {
-      const [s] = await db.select().from(services).where(eq(services.id, body.serviceId));
+      const [s] = await db.select().from(services).where(and(eq(services.id, body.serviceId), isNull(services.ownerArtisanId)));
       if (s) basePriceCents = s.referencePriceCents;
     }
     if (!basePriceCents) {
       const [r] = await db
         .select({ p: sql<number>`min(${services.referencePriceCents})::int` })
         .from(services)
-        .where(and(eq(services.domain, body.domain), eq(services.active, true), body.urgent ? eq(services.urgentEligible, true) : undefined));
+        .where(and(eq(services.domain, body.domain), eq(services.active, true), isNull(services.ownerArtisanId), body.urgent ? eq(services.urgentEligible, true) : undefined));
       basePriceCents = r?.p ?? 0;
     }
     const price = computePrice({ basePriceCents, travelFeeCents, urgent: body.urgent, withGuarantee: body.withGuarantee });

@@ -10,7 +10,7 @@ import {
   EmptyState,
   ErrorState,
   Icon,
-  IconButton,
+  HeartButton,
   Screen,
   SectionHeader,
   Skeleton,
@@ -26,11 +26,13 @@ import {
   useTheme,
 } from '@depano/ui';
 import { router, Stack } from 'expo-router';
-import { Award, BadgeCheck, CalendarOff, Heart, MapPin, ShieldCheck, Siren, UserRoundX } from 'lucide-react-native';
+import { Award, BadgeCheck, CalendarOff, MapPin, ShieldCheck, Siren, Sparkles, UserRoundX } from 'lucide-react-native';
 import { useState } from 'react';
 import { Image, ScrollView, View } from 'react-native';
 import { ApiError, errorMessage } from '@/lib/api';
+import { features } from '@/lib/env';
 import { useRequireAuth } from '@/lib/useRequireAuth';
+import { PROMOTED_LABEL } from '../components/ArtisanResultCard';
 import { useArtisan, useArtisanReviews, useFavorites, useSlots, useToggleFavorite } from '../queries';
 import { useSearchOrigin } from '../useSearchOrigin';
 
@@ -70,7 +72,7 @@ function ReviewItem({ r }: { r: ReviewDto }) {
   );
 }
 
-/** Fiche artisan : identité, badges, tarifs, réalisations, zone, avis, prochaines dispos, favori. */
+/** Fiche artisan : bannière, identité, badges, présentation, tarifs, réalisations, zone, avis, prochaines dispos, favori. */
 export function ArtisanProfileScreen({ id }: { id: string }) {
   const t = useTheme();
   const { origin } = useSearchOrigin();
@@ -95,10 +97,10 @@ export function ArtisanProfileScreen({ id }: { id: string }) {
       options={{
         title: a?.displayName ?? '',
         headerRight: () => (
-          <IconButton
-            icon={Heart}
+          // Cœur animé (pop + haptique intégrés au composant)
+          <HeartButton
+            active={isFav}
             accessibilityLabel={isFav ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-            color={isFav ? t.colors.tone.urgent.text : undefined}
             onPress={onFav}
             testID="toggle-favorite"
           />
@@ -153,8 +155,19 @@ export function ArtisanProfileScreen({ id }: { id: string }) {
     >
       {header}
       <View style={{ gap: t.spacing.xl }} testID="artisan-profile">
-        <View style={{ flexDirection: 'row', gap: t.spacing.lg, alignItems: 'center' }}>
-          <Avatar name={a.displayName} uri={a.avatarUrl} size={96} />
+        {a.bannerUrl ? (
+          <Image
+            source={{ uri: a.bannerUrl }}
+            resizeMode="cover"
+            style={{ height: 168, marginHorizontal: -t.spacing.lg, marginTop: -t.spacing.lg, marginBottom: -(t.spacing.xl + 32), backgroundColor: t.colors.background.brand }}
+            accessibilityLabel={`Bannière de ${a.displayName}`}
+            testID="artisan-banner"
+          />
+        ) : null}
+        <View style={{ flexDirection: 'row', gap: t.spacing.lg, alignItems: a.bannerUrl ? 'flex-end' : 'center' }}>
+          <View style={a.bannerUrl ? { borderRadius: 52, borderWidth: 4, borderColor: t.colors.background.canvas } : undefined}>
+            <Avatar name={a.displayName} uri={a.avatarUrl} size={96} />
+          </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text variant="title1">{a.displayName}</Text>
             <Text tone="secondary">{a.companyName}</Text>
@@ -166,7 +179,8 @@ export function ArtisanProfileScreen({ id }: { id: string }) {
           {a.domains.map((d) => (
             <DomainChip key={d} domain={d} />
           ))}
-          {a.urgentAvailable ? <Chip tone="urgent" icon={Siren} label="Dispo urgence" /> : null}
+          {features.urgent && a.urgentAvailable ? <Chip tone="urgent" icon={Siren} label="Dispo urgence" /> : null}
+          {a.promoted ? <Chip tone="brand" icon={Sparkles} label={PROMOTED_LABEL} /> : null}
         </View>
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm }}>
@@ -204,7 +218,12 @@ export function ArtisanProfileScreen({ id }: { id: string }) {
           ))}
         </View>
 
-        {a.bio ? <Text>{a.bio}</Text> : null}
+        {a.bio ? (
+          <View style={{ gap: t.spacing.sm }}>
+            <SectionHeader title="Présentation" />
+            <Text>{a.bio}</Text>
+          </View>
+        ) : null}
 
         <View style={{ gap: t.spacing.sm }}>
           <SectionHeader title="Prochaines disponibilités" />

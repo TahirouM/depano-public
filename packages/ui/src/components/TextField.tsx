@@ -85,7 +85,7 @@ export function TextField({ label, helper, error, left, right, ref, multiline, o
 const styles = StyleSheet.create({
   box: { flexDirection: 'row', alignItems: 'center' },
   // Le cadre porte déjà le focus : pas de contour navigateur en plus sur le web.
-  input: { flex: 1, minHeight: MIN_TOUCH, ...(Platform.OS === 'web' ? { outlineWidth: 0 } : null) },
+  input: { flex: 1, minHeight: MIN_TOUCH, ...(Platform.OS === 'web' ? ({ outlineWidth: 0, outlineStyle: 'none' } as object) : null) },
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   flex: { flex: 1 },
 });

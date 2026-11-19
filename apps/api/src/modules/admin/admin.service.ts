@@ -34,6 +34,7 @@ import {
   eq,
   ilike,
   inArray,
+  isNull,
   or,
   services,
   sql,
@@ -437,7 +438,8 @@ export class AdminService {
   /* ------------------------------- Catalogue ----------------------------- */
 
   async servicesList() {
-    const rows = await this.conn.db.select().from(services).orderBy(asc(services.domain), asc(services.sortOrder));
+    // Catalogue DEPANO : les motifs personnels des artisans sont gérés depuis leur fiche.
+    const rows = await this.conn.db.select().from(services).where(isNull(services.ownerArtisanId)).orderBy(asc(services.domain), asc(services.sortOrder));
     return rows.map((s) => ({ ...toServiceDto(s), active: s.active }));
   }
 
@@ -448,7 +450,7 @@ export class AdminService {
   }
 
   async updateService(admin: AuthUser, id: string, body: Partial<AdminServiceBody>): Promise<ServiceDto> {
-    const [s] = await this.conn.db.update(services).set(body).where(eq(services.id, id)).returning();
+    const [s] = await this.conn.db.update(services).set(body).where(and(eq(services.id, id), isNull(services.ownerArtisanId))).returning();
     if (!s) throw notFound('service_not_found', 'Prestation introuvable.');
     await this.audit.log(admin.id, 'service.update', 'service', id, body);
     return toServiceDto(s);

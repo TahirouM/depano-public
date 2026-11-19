@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useTheme } from '../theme/ThemeProvider';
+import { useShake } from '../utils/shake';
 import { MAX_FONT_SCALE } from '../tokens/typography';
 import { Text } from './Text';
 
@@ -46,6 +48,14 @@ export function OtpInput({
     if (value.length < length) lastCompleted.current = null;
   }, [value, length, onComplete]);
 
+  // Secousse quand l'erreur apparaît (front montant uniquement ; l'haptique reste à l'appelant).
+  const { style: shakeStyle, shake } = useShake();
+  const prevError = useRef(!!error);
+  useEffect(() => {
+    if (error && !prevError.current) shake();
+    prevError.current = !!error;
+  }, [error, shake]);
+
   const a11yLabel = label ?? `Code à ${length} chiffres`;
   const boxSize = length === 6 ? 48 : 60;
 
@@ -56,7 +66,11 @@ export function OtpInput({
       style={styles.wrap}
       testID={testID}
     >
-      <View style={[styles.row, { gap: length === 6 ? t.spacing.sm : t.spacing.md }]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+      <Animated.View
+        style={[styles.row, { gap: length === 6 ? t.spacing.sm : t.spacing.md }, shakeStyle]}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      >
         {Array.from({ length }, (_, i) => {
           const char = value[i];
           const active = focused && (i === value.length || (i === length - 1 && value.length === length));
@@ -81,7 +95,7 @@ export function OtpInput({
             </View>
           );
         })}
-      </View>
+      </Animated.View>
       <TextInput
         ref={ref}
         value={value}

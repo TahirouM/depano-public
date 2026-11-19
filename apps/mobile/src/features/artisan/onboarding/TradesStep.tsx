@@ -49,7 +49,11 @@ export function TradesStep() {
     if (!p) return;
     if (!draft.domains?.length && p.domains.length) patch({ domains: p.domains });
     if (!draft.prices && p.services.length)
-      patch({ prices: Object.fromEntries(p.services.map((s) => [s.serviceId, s.priceCents])) });
+      patch({
+        prices: Object.fromEntries(
+          p.services.filter((s) => s.active).map((s) => [s.serviceId, s.priceCents]),
+        ),
+      });
   }, [profile.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Métiers suggérés par le SIRET : prestations courantes cochées au prix du marché.
@@ -79,16 +83,30 @@ export function TradesStep() {
     mutationFn: async () => {
       const all = catalog.data!.flatMap((d) => d.services);
       await api.artisan.updateProfile({ domains, travelFeeCents: fee ?? 0 });
+      // Prestations déjà enregistrées mais non cochées ici (motifs personnels, désactivées) : conservées,
+      // désactivées sauf motif personnel actif (non affiché à cette étape).
+      const kept = (profile.data?.services ?? [])
+        .filter((s) => !selectedIds.includes(s.serviceId))
+        .map((s) => ({
+          serviceId: s.serviceId,
+          priceCents: s.priceCents,
+          durationMinutes: s.durationMinutes,
+          active: s.custom && s.active,
+        }));
       return api.artisan.setServices({
-        services: selectedIds.map((id) => ({
-          serviceId: id,
-          priceCents: prices[id]!,
-          durationMinutes:
-            draft.durations?.[id] ??
-            profile.data?.services.find((s) => s.serviceId === id)?.durationMinutes ??
-            all.find((s) => s.id === id)?.defaultDurationMinutes ??
-            60,
-        })),
+        services: [
+          ...selectedIds.map((id) => ({
+            serviceId: id,
+            priceCents: prices[id]!,
+            durationMinutes:
+              draft.durations?.[id] ??
+              profile.data?.services.find((s) => s.serviceId === id)?.durationMinutes ??
+              all.find((s) => s.id === id)?.defaultDurationMinutes ??
+              60,
+            active: true,
+          })),
+          ...kept,
+        ],
       });
     },
     onSuccess: (p) => {
@@ -176,7 +194,7 @@ export function TradesStep() {
           keyboardType="decimal-pad"
           inputMode="decimal"
           error={fee == null ? 'Indiquez un montant (0 si offerts).' : null}
-          helper="Facturés une seule fois par intervention, sans commission DEPANO."
+          helper="Facturés une seule fois par intervention."
           testID="travel-fee"
         />
       </View>

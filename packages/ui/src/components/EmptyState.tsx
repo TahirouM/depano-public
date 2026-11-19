@@ -21,7 +21,7 @@ export function EmptyState({ icon = Inbox, title, message, action, secondaryActi
   return (
     <View style={[styles.wrap, fill && styles.fill, { padding: t.spacing.xl, gap: t.spacing.md }]}>
       <View style={[styles.illu, { backgroundColor: t.colors.background.brand }]}>
-        <Icon icon={icon} size={40} color={t.colors.text.brand} strokeWidth={1.75} />
+        <Icon icon={icon} size={40} color={t.colors.text.primary} strokeWidth={1.75} />
       </View>
       <Text variant="title2" align="center">
         {title}

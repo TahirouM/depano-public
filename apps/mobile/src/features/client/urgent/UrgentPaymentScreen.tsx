@@ -1,5 +1,5 @@
 import { DOMAIN_LABELS, RULES, formatEuros } from '@depano/schemas';
-import { Button, Card, Divider, Icon, PriceSummary, ProgressHeader, Screen, Skeleton, Switch, Text, useTheme } from '@depano/ui';
+import { Button, Card, Divider, Icon, ProgressHeader, Screen, Skeleton, Switch, Text, haptic, useTheme } from '@depano/ui';
 import { Redirect, router, Stack } from 'expo-router';
 import { CircleAlert, CreditCard, Lock, MapPin, Wrench } from 'lucide-react-native';
 import { useState } from 'react';
@@ -8,6 +8,7 @@ import { useIsSignedIn } from '@/lib/query/hooks';
 import { useRequireAuth } from '@/lib/useRequireAuth';
 import { DRAFT_KEYS, useDraft } from '@/stores/drafts';
 import { choicePoint, toBookingAddress } from '../components/AddressChooser';
+import { BookingPriceSummary } from '../components/BookingPriceSummary';
 import { Checkbox } from '../components/Checkbox';
 import { addressLabel, uploadDraftMedia, type UrgentFlowDraft } from '../drafts';
 import { PHASE_LABEL, useCheckout } from '../payment/useCheckout';
@@ -42,6 +43,9 @@ export function UrgentPaymentScreen() {
       return;
     }
     if (!requireAuth('Créez votre compte pour payer — cela prend 30 secondes.')) return;
+    // Retour tactile au moment où la demande part réellement (pas sur un appui refusé par la validation).
+    // La confirmation du paiement déclenche ensuite son propre « success » dans useCheckout.
+    haptic('medium');
     const booking = await checkout.run(async () => ({
       kind: 'urgent',
       domain: draft.domain!,
@@ -50,6 +54,7 @@ export function UrgentPaymentScreen() {
       problemReason: draft.problemReason!.trim(),
       problemDescription: draft.problemDescription?.trim() || undefined,
       problemFileIds: await uploadDraftMedia(draft),
+      priceOnRequest: false,
       withGuarantee,
       waivesWithdrawal: true,
       paymentMethodId: card?.id,
@@ -76,7 +81,6 @@ export function UrgentPaymentScreen() {
             loading={checkout.busy}
             disabled={!estimate.data}
             onPress={() => void pay()}
-            haptic="medium"
             testID="urgent-pay"
           />
         </View>
@@ -103,7 +107,7 @@ export function UrgentPaymentScreen() {
 
         <Card style={{ gap: t.spacing.md }}>
           {estimate.data ? (
-            <PriceSummary
+            <BookingPriceSummary
               price={estimate.data.price}
               showRange
               baseLabel={draft.serviceId ? 'Intervention (prix de base)' : 'Diagnostic et intervention'}

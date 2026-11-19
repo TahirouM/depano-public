@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import Stripe from 'stripe';
 import { AppConfig } from '../config/config.service';
 import { badRequest } from '../common/errors';
-import type { IntentState, PaymentProvider, WebhookEvent } from './payment.provider';
+import type { IntentState, PaymentProvider, PromotionSubscriptionResult, WebhookEvent } from './payment.provider';
 
 function mapPi(status: Stripe.PaymentIntent.Status): IntentState {
   switch (status) {
@@ -27,10 +27,12 @@ export class StripePaymentProvider implements PaymentProvider {
   readonly name = 'stripe' as const;
   private readonly stripe: Stripe;
   private readonly webhookSecret: string;
+  private readonly promotionPriceId: string;
 
   constructor(@Inject(AppConfig) config: AppConfig) {
     this.stripe = new Stripe(config.env.STRIPE_SECRET_KEY);
     this.webhookSecret = config.env.STRIPE_WEBHOOK_SECRET;
+    this.promotionPriceId = config.env.STRIPE_PROMOTION_PRICE_ID;
   }
 
   async ensureCustomer(user: { id: string; email: string | null; phone: string | null; name: string | null; customerId: string | null }) {
@@ -98,7 +100,7 @@ export class StripePaymentProvider implements PaymentProvider {
     }
     const pi = await this.stripe.paymentIntents.retrieve(id);
     const pm = typeof pi.payment_method === 'string' ? pi.payment_method : (pi.payment_method?.id ?? null);
-    return { status: mapPi(pi.status), amountCapturableCents: pi.amount_capturable, paymentMethodId: pm };
+    return { status: mapPi(pi.status), amountCapturableCents: pi.amount_capturable, paymentMethodId: pm, clientSecret: pi.client_secret };
   }
 
   async capture(id: string, input: { amountCents: number; applicationFeeCents: number; destinationAccountId?: string | null; bookingId: string }) {
@@ -191,6 +193,42 @@ export class StripePaymentProvider implements PaymentProvider {
       status: p.status,
       arrivalDate: p.arrival_date ? new Date(p.arrival_date * 1000).toISOString() : null,
     }));
+  }
+
+  /**
+   * Abonnement Stripe Billing sur le prix récurrent STRIPE_PROMOTION_PRICE_ID (montant et périodicité définis dans
+   * Stripe, alignés sur RULES.promotion). `default_incomplete` : la première facture est réglée dans l'app via le
+   * client_secret de son PaymentIntent (payment sheet) ; la période est ensuite prolongée par le webhook `invoice.paid`
+   * (première facture et renouvellements). Non testé contre Stripe (tests en PAYMENT_PROVIDER=fake).
+   */
+  async createPromotionSubscription(input: { customerId: string; artisanId: string }): Promise<PromotionSubscriptionResult> {
+    if (!this.promotionPriceId) throw badRequest('promotion_unavailable', "L'abonnement de mise en avant n'est pas encore disponible.");
+    const sub = await this.stripe.subscriptions.create(
+      {
+        customer: input.customerId,
+        items: [{ price: this.promotionPriceId }],
+        payment_behavior: 'default_incomplete',
+        payment_settings: { save_default_payment_method: 'on_subscription' },
+        expand: ['latest_invoice.confirmation_secret'],
+        metadata: { artisanId: input.artisanId, purpose: 'promotion' },
+      },
+      { idempotencyKey: `promotion:${input.artisanId}:${new Date().toISOString().slice(0, 13)}` },
+    );
+    const invoice = typeof sub.latest_invoice === 'string' ? null : sub.latest_invoice;
+    const clientSecret = invoice?.confirmation_secret?.client_secret ?? null;
+    const periodEnd = sub.items.data[0]?.current_period_end;
+    return {
+      ref: sub.id,
+      status: sub.status === 'active' ? 'active' : 'requires_action',
+      // client_secret d'un PaymentIntent : « pi_xxx_secret_yyy ».
+      paymentIntentId: clientSecret ? (clientSecret.split('_secret_')[0] ?? null) : null,
+      clientSecret,
+      currentPeriodEnd: sub.status === 'active' && periodEnd ? new Date(periodEnd * 1000) : null,
+    };
+  }
+
+  async setPromotionAutoRenew(ref: string, autoRenew: boolean) {
+    await this.stripe.subscriptions.update(ref, { cancel_at_period_end: !autoRenew });
   }
 
   parseWebhook(rawBody: Buffer, signature: string | undefined): WebhookEvent {

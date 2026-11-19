@@ -1,3 +1,4 @@
+import { RULES } from '@depano/schemas';
 import { Card, ListItem, Screen, Text, useTheme } from '@depano/ui';
 import { Mail, MessageCircleQuestion } from 'lucide-react-native';
 import { Linking, View } from 'react-native';
@@ -5,7 +6,10 @@ import { SettingsSection } from '@/features/settings/SettingsSection';
 
 const FAQ = [
   { q: 'Quand suis-je débité ?', a: "Uniquement à la fin, quand vous donnez le code à 4 chiffres à l'artisan. Avant, c'est une simple empreinte bancaire." },
-  { q: 'Puis-je annuler ?', a: "Oui, gratuitement jusqu'à 2 h avant un rendez-vous. Au-delà, des frais de déplacement peuvent s'appliquer, sauf garantie annulation." },
+  {
+    q: 'Puis-je annuler ?',
+    a: `Oui, gratuitement pendant ${RULES.cancellation.freeWithinHoursAfterBooking} h après la prise de rendez-vous. Au-delà, des frais de déplacement peuvent s'appliquer, sauf garantie annulation.`,
+  },
   { q: "L'artisan n'est jamais venu", a: "Ouvrez l'intervention, puis « Que s'est-il passé ? ». Le paiement est gelé et notre équipe tranche sous 72 h." },
 ];
 

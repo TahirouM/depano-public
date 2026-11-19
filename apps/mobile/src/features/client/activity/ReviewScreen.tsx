@@ -1,7 +1,7 @@
 import type { BookingDetailDto } from '@depano/schemas';
-import { Avatar, Button, Card, Chip, EmptyState, ErrorState, IconButton, Screen, Skeleton, StarRating, Text, TextField, formatDateLong, useTheme, useToast } from '@depano/ui';
+import { Avatar, Button, Card, Chip, EmptyState, ErrorState, IconButton, Screen, Skeleton, StarRating, Text, TextField, formatDateLong, haptic, useTheme, useToast } from '@depano/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { router, Stack } from 'expo-router';
+import { router, Stack, type Href } from 'expo-router';
 import { CalendarX, Image as ImageIcon, MessageSquareHeart, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { Image, View } from 'react-native';
@@ -15,16 +15,19 @@ const POSITIVE = ['Ponctuel', 'Travail soigné', 'Prix respecté', 'Bons conseil
 const NEGATIVE = ['En retard', 'Travail à reprendre', 'Peu clair sur le prix', 'Peu soigneux'];
 const RATING_LABEL = ['', 'Très décevant', 'Décevant', 'Correct', 'Bien', 'Excellent'];
 
-/** Notation : étoiles, tags, commentaire, photo ; état « déjà noté » et fenêtre de 14 jours. */
-export function ReviewScreen({ id }: { id: string }) {
+/**
+ * Notation : étoiles, tags, commentaire, photo ; état « déjà noté » et fenêtre de 14 jours.
+ * `backHref` : écran de l'intervention à retrouver (onglet Rendez-vous par défaut, ou Interventions).
+ */
+export function ReviewScreen({ id, backHref }: { id: string; backHref?: Href }) {
   return (
     <AuthGate title="Notation" message="Connectez-vous pour noter votre artisan.">
-      <ReviewInner id={id} />
+      <ReviewInner id={id} backHref={backHref ?? { pathname: '/activite/[id]', params: { id } }} />
     </AuthGate>
   );
 }
 
-function ReviewInner({ id }: { id: string }) {
+function ReviewInner({ id, backHref }: { id: string; backHref: Href }) {
   const t = useTheme();
   const qc = useQueryClient();
   const toast = useToast();
@@ -42,11 +45,13 @@ function ReviewInner({ id }: { id: string }) {
       return api.bookings.review(id, { rating, tags, comment: comment.trim() || undefined, photoFileIds });
     },
     onSuccess: (review) => {
+      // Vibration de succès seulement une fois l'avis enregistré par le serveur.
+      haptic('success');
       qc.setQueryData<BookingDetailDto>(qk.bookings.detail(id), (old) => (old ? { ...old, review, canReview: false } : old));
       void qc.invalidateQueries({ queryKey: qk.bookings.detail(id) });
       if (b?.artisan) void qc.invalidateQueries({ queryKey: qk.catalog.artisan(b.artisan.id) });
       toast.success('Merci pour votre avis !');
-      router.dismissTo({ pathname: '/activite/[id]', params: { id } });
+      router.dismissTo(backHref);
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -64,7 +69,7 @@ function ReviewInner({ id }: { id: string }) {
   if (b.review) {
     const r = b.review;
     return (
-      <Screen inTabs footer={<Button size="lg" fullWidth label="Retour" onPress={() => router.dismissTo({ pathname: '/activite/[id]', params: { id } })} />}>
+      <Screen inTabs footer={<Button size="lg" fullWidth label="Retour" onPress={() => router.dismissTo(backHref)} />}>
         {header}
         <View style={{ gap: t.spacing.lg }} testID="already-reviewed">
           <EmptyState icon={MessageSquareHeart} title="Vous avez déjà noté cette intervention" message={`Avis publié le ${formatDateLong(r.createdAt)}.`} />
@@ -99,7 +104,7 @@ function ReviewInner({ id }: { id: string }) {
           icon={CalendarX}
           title={b.status === 'closed' ? 'La notation est fermée' : 'Pas encore'}
           message={b.status === 'closed' ? 'Les avis sont ouverts pendant 14 jours après la fin de l’intervention.' : 'Vous pourrez noter l’artisan une fois l’intervention terminée.'}
-          action={{ label: "Retour à l'intervention", onPress: () => router.dismissTo({ pathname: '/activite/[id]', params: { id } }) }}
+          action={{ label: "Retour à l'intervention", onPress: () => router.dismissTo(backHref) }}
         />
       </Screen>
     );
@@ -110,7 +115,7 @@ function ReviewInner({ id }: { id: string }) {
     <Screen
       inTabs
       footer={
-        <Button size="lg" fullWidth label="Publier mon avis" disabled={!rating} loading={submit.isPending} onPress={() => submit.mutate()} haptic="success" testID="submit-review" />
+        <Button size="lg" fullWidth label="Publier mon avis" disabled={!rating} loading={submit.isPending} onPress={() => submit.mutate()} testID="submit-review" />
       }
     >
       {header}

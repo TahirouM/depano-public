@@ -290,12 +290,12 @@ function QuoteForm({ b }: { b: BookingDetailDto }) {
           </View>
         </View>
 
-        {profile.data?.services.length ? (
+        {profile.data?.services.some((s) => s.active && s.domain === b.domain) ? (
           <View style={{ gap: t.spacing.sm }}>
             <Text variant="label">Ajout rapide depuis vos prestations</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm }}>
               {profile.data.services
-                .filter((s) => s.domain === b.domain)
+                .filter((s) => s.active && s.domain === b.domain)
                 .map((s) => (
                   <Chip
                     key={s.serviceId}

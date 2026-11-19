@@ -1,11 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { RULES } from '@depano/schemas';
-import { and, artisanProfiles, bookings, eq, gte, sql } from '@depano/db';
+import { and, artisanProfiles, bookings, eq, gte, isNotNull, sql } from '@depano/db';
 import { DbConnection } from '../../infra/db';
 import { NotificationsService } from '../notifications/notifications.service';
 import { days } from '../../common/time';
 
-/** Fiabilité artisan : 3 annulations en 30 jours ⇒ urgences suspendues 30 jours. */
+/**
+ * Fiabilité artisan : 3 annulations en 30 jours ⇒ urgences suspendues 30 jours.
+ * Seules comptent les interventions acceptées : refuser une demande de RDV n'est pas une annulation.
+ */
 @Injectable()
 export class ReliabilityService {
   constructor(
@@ -17,7 +20,14 @@ export class ReliabilityService {
     const [r] = await this.conn.db
       .select({ n: sql<number>`count(*)::int` })
       .from(bookings)
-      .where(and(eq(bookings.artisanId, artisanId), eq(bookings.status, 'cancelled_by_artisan'), gte(bookings.cancelledAt, new Date(Date.now() - days(30)))));
+      .where(
+        and(
+          eq(bookings.artisanId, artisanId),
+          eq(bookings.status, 'cancelled_by_artisan'),
+          isNotNull(bookings.acceptedAt),
+          gte(bookings.cancelledAt, new Date(Date.now() - days(30))),
+        ),
+      );
     return r?.n ?? 0;
   }
 
@@ -49,7 +59,7 @@ export class ReliabilityService {
   async sweep() {
     const rows = await this.conn.db.execute<{ artisan_id: string }>(sql`
       select artisan_id from bookings
-      where status = 'cancelled_by_artisan' and cancelled_at >= now() - interval '30 days' and artisan_id is not null
+      where status = 'cancelled_by_artisan' and accepted_at is not null and cancelled_at >= now() - interval '30 days' and artisan_id is not null
       group by artisan_id having count(*) >= ${RULES.artisanReliability.maxCancellationsIn30Days}`);
     let suspended = 0;
     for (const r of rows) if ((await this.check(r.artisan_id)).suspended) suspended++;

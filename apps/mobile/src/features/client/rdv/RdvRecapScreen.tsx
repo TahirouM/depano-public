@@ -1,19 +1,24 @@
 import { DOMAIN_LABELS, RULES, computePrice, formatEuros } from '@depano/schemas';
-import { Button, Card, Divider, Icon, PriceSummary, ProgressHeader, Screen, Switch, Text, formatDateTime, useTheme } from '@depano/ui';
+import { Button, Card, Divider, Icon, PriceRow, ProgressHeader, Screen, Switch, Text, formatDateTime, useTheme } from '@depano/ui';
 import { Redirect, router, Stack } from 'expo-router';
-import { CalendarClock, CircleAlert, CreditCard, Info, MapPinOff, Wrench } from 'lucide-react-native';
+import { CalendarClock, CircleAlert, CreditCard, Info, MapPinOff, MessageSquareText, Wrench } from 'lucide-react-native';
 import { useCallback } from 'react';
 import { View } from 'react-native';
 import { useIsSignedIn } from '@/lib/query/hooks';
 import { useRequireAuth } from '@/lib/useRequireAuth';
 import { AddressChooser, choicePoint, toBookingAddress, type AddressChoice } from '../components/AddressChooser';
+import { BookingPriceSummary } from '../components/BookingPriceSummary';
 import { uploadDraftMedia } from '../drafts';
 import { PHASE_LABEL, useCheckout } from '../payment/useCheckout';
-import { useAddresses, useArtisan, usePaymentMethods } from '../queries';
+import { useAddresses, useArtisan, usePaymentMethods, useReferral } from '../queries';
 import { RdvArtisanBanner } from './RdvArtisanBanner';
-import { SCHEDULED_TYPE_LABELS, useRdv } from './useRdv';
+import { PRICE_ON_REQUEST_LABEL, SCHEDULED_TYPE_LABELS, useRdv } from './useRdv';
 
-/** RDV 4 sur 4 : adresse (pré-remplie), récapitulatif, conditions d'annulation, carte. */
+/**
+ * RDV 4 sur 4 : adresse (pré-remplie), récapitulatif, conditions d'annulation, carte.
+ * La demande part à l'artisan, qui l'accepte (statut `requested` → `accepted`).
+ * Besoin « Autre… » : pas de prix ni de paiement, « Envoyer la demande » ; l'artisan proposera un prix.
+ */
 export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
   const t = useTheme();
   const rdv = useRdv(artisanId);
@@ -23,6 +28,7 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
   const saved = useAddresses();
   const cards = usePaymentMethods();
   const checkout = useCheckout();
+  const referral = useReferral();
   const point = choicePoint(draft, saved.data);
   // Distance artisan ↔ adresse (calculée par l'API) pour vérifier sa zone d'intervention.
   const near = useArtisan(point ? artisanId : undefined, point);
@@ -32,7 +38,12 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
 
   const a = artisan.data;
   const domain = rdv.domain;
-  const price = a ? computePrice({ basePriceCents: rdv.basePriceCents, travelFeeCents: a.travelFeeCents, urgent: false, withGuarantee: !!draft.withGuarantee }) : null;
+  const onRequest = rdv.priceOnRequest;
+  const discountCents = referral.data?.nextDiscountCents ?? 0;
+  const price =
+    a && !onRequest
+      ? computePrice({ basePriceCents: rdv.basePriceCents, travelFeeCents: a.travelFeeCents, urgent: false, withGuarantee: !!draft.withGuarantee, discountCents })
+      : null;
   const outOfArea = near.data?.distanceKm != null && near.data.distanceKm > near.data.radiusKm;
   const daysAhead = (new Date(draft.scheduledAt).getTime() - Date.now()) / 86_400_000;
   const deferred = daysAhead > RULES.authorizationMaxDaysAhead;
@@ -41,20 +52,24 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
 
   const confirm = async () => {
     if (!requireAuth('Créez votre compte pour réserver — cela prend 30 secondes.')) return;
+    const need = draft.problemReason!.trim();
+    const details = draft.problemDescription?.trim();
     const booking = await checkout.run(async () => ({
       kind: 'scheduled',
       domain: domain!,
       artisanId,
-      serviceId: draft.serviceId,
+      serviceId: onRequest ? undefined : draft.serviceId,
       scheduledType: draft.scheduledType,
       scheduledAt: draft.scheduledAt,
       ...toBookingAddress(draft, saved.data),
-      problemReason: draft.problemReason!.trim(),
-      problemDescription: draft.problemDescription?.trim() || undefined,
+      // « Autre… » : le besoin saisi devient la description que l'artisan chiffre.
+      problemReason: onRequest ? 'Autre' : need,
+      problemDescription: onRequest ? [need, details].filter(Boolean).join('\n\n') : details || undefined,
       problemFileIds: await uploadDraftMedia(draft),
-      withGuarantee: !!draft.withGuarantee,
+      priceOnRequest: onRequest,
+      withGuarantee: !onRequest && !!draft.withGuarantee,
       waivesWithdrawal: false,
-      paymentMethodId: card?.id,
+      paymentMethodId: onRequest ? undefined : card?.id,
     }));
     if (booking) {
       reset();
@@ -68,14 +83,24 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
       footer={
         <View style={{ gap: t.spacing.sm }}>
           <Text variant="callout" tone="secondary" align="center">
-            Votre carte n'est débitée qu'à la fin. Rien n'est prélevé maintenant.
+            {onRequest
+              ? "Rien n'est payé maintenant : l'artisan vous proposera un prix."
+              : "L'artisan doit accepter votre demande. Votre carte n'est débitée qu'à la fin."}
           </Text>
           <Button
             size="lg"
             fullWidth
-            label={checkout.busy ? PHASE_LABEL[checkout.phase] : signedIn ? 'Confirmer le rendez-vous' : 'Continuer vers le paiement'}
+            label={
+              checkout.busy
+                ? PHASE_LABEL[checkout.phase]
+                : onRequest
+                  ? 'Envoyer la demande'
+                  : signedIn
+                    ? 'Envoyer la demande de rendez-vous'
+                    : 'Continuer vers le paiement'
+            }
             loading={checkout.busy}
-            disabled={!price || !point || outOfArea || slotPassed || !domain}
+            disabled={(!price && !onRequest) || !a || !point || outOfArea || slotPassed || !domain}
             onPress={() => void confirm()}
             testID="rdv-confirm"
           />
@@ -84,7 +109,7 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
     >
       <Stack.Screen options={{ title: 'Rendez-vous · Récapitulatif', headerShown: true }} />
       <View style={{ gap: t.spacing.xl }}>
-        <ProgressHeader step={4} total={4} title="Vérifiez et confirmez" />
+        <ProgressHeader step={4} total={4} title={onRequest ? 'Vérifiez et envoyez votre demande' : 'Vérifiez et confirmez'} />
         <RdvArtisanBanner artisan={artisan} />
 
         <Card variant="flat" padding="md" style={{ gap: t.spacing.sm }}>
@@ -99,9 +124,18 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
             <Icon icon={Wrench} size={20} color={t.colors.text.secondary} />
             <Text style={{ flex: 1 }}>
               {SCHEDULED_TYPE_LABELS[draft.scheduledType].title}
-              {domain ? ` · ${DOMAIN_LABELS[domain]}` : ''} · {draft.problemReason}
+              {domain ? ` · ${DOMAIN_LABELS[domain]}` : ''}
+              {onRequest ? ' · Autre besoin' : ` · ${draft.problemReason}`}
             </Text>
           </View>
+          {onRequest ? (
+            <View style={{ flexDirection: 'row', gap: t.spacing.sm }}>
+              <Icon icon={MessageSquareText} size={20} color={t.colors.text.secondary} />
+              <Text tone="secondary" style={{ flex: 1 }}>
+                {draft.problemReason}
+              </Text>
+            </View>
+          ) : null}
         </Card>
         {slotPassed ? (
           <Text tone="danger">Ce créneau est passé : choisissez-en un autre.</Text>
@@ -122,19 +156,36 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
           ) : null}
         </View>
 
-        <Card style={{ gap: t.spacing.md }}>
-          {price ? <PriceSummary price={price} baseLabel={rdv.selectedService?.name ?? 'Intervention'} /> : <Text tone="secondary">Calcul du prix…</Text>}
-          <Text variant="callout" tone="secondary">
-            Le devis détaillé de l'artisan sur place reste à valider dans l'app avant tout travail.
-          </Text>
-        </Card>
+        {onRequest ? (
+          <Card style={{ gap: t.spacing.md }} testID="rdv-price-on-request">
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.spacing.md }}>
+              <Text style={{ flex: 1 }}>Prestation</Text>
+              <Text variant="bodyStrong">{PRICE_ON_REQUEST_LABEL}</Text>
+            </View>
+            {a ? <PriceRow label="Déplacement" cents={a.travelFeeCents} /> : null}
+            <Divider />
+            <Text variant="callout" tone="secondary">
+              L'artisan va étudier votre demande et vous proposer un prix ; vous pourrez l'accepter ou non. Votre carte ne sera demandée qu'à
+              l'acceptation du prix.
+            </Text>
+          </Card>
+        ) : (
+          <>
+            <Card style={{ gap: t.spacing.md }}>
+              {price ? <BookingPriceSummary price={price} baseLabel={rdv.selectedService?.name ?? 'Intervention'} /> : <Text tone="secondary">Calcul du prix…</Text>}
+              <Text variant="callout" tone="secondary">
+                Le devis détaillé de l'artisan sur place reste à valider dans l'app avant tout travail.
+              </Text>
+            </Card>
 
-        <Switch
-          label={`Garantie annulation (${formatEuros(RULES.cancellationGuaranteeCents)})`}
-          description="Annulez sans frais jusqu'au dernier moment."
-          value={!!draft.withGuarantee}
-          onValueChange={(v) => patch({ withGuarantee: v })}
-        />
+            <Switch
+              label={`Garantie annulation (${formatEuros(RULES.cancellationGuaranteeCents)})`}
+              description="Annulez sans frais jusqu'au dernier moment."
+              value={!!draft.withGuarantee}
+              onValueChange={(v) => patch({ withGuarantee: v })}
+            />
+          </>
+        )}
 
         <Card variant="outline" style={{ gap: t.spacing.sm }}>
           <View style={{ flexDirection: 'row', gap: t.spacing.sm, alignItems: 'center' }}>
@@ -142,7 +193,7 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
             <Text variant="bodyStrong">Conditions d'annulation</Text>
           </View>
           <Text variant="callout" tone="secondary">
-            Annulation gratuite jusqu'à {RULES.cancellation.freeUntilHoursBefore} h avant. Ensuite, seuls les frais de déplacement ({a ? formatEuros(a.travelFeeCents) : '—'}) sont dus, sauf garantie annulation. Si l'artisan a plus de {RULES.cancellation.lateArtisanMinutes} min de retard, vous annulez sans frais.
+            Annulation gratuite pendant {RULES.cancellation.freeWithinHoursAfterBooking} h après la prise de rendez-vous (et tant que l'artisan n'a pas confirmé). Ensuite, seuls les frais de déplacement ({a ? formatEuros(a.travelFeeCents) : '—'}) sont dus, sauf garantie annulation. Si l'artisan a plus de {RULES.cancellation.lateArtisanMinutes} min de retard, vous annulez sans frais.
           </Text>
           <Divider />
           <Text variant="callout" tone="secondary">
@@ -150,17 +201,19 @@ export function RdvRecapScreen({ artisanId }: { artisanId: string }) {
           </Text>
         </Card>
 
-        <Card variant="brand" padding="md" style={{ flexDirection: 'row', gap: t.spacing.md, alignItems: 'center' }}>
-          <Icon icon={CreditCard} color={t.colors.text.brand} />
-          <View style={{ flex: 1 }}>
-            <Text variant="bodyStrong">{card ? `${card.brand.toUpperCase()} •••• ${card.last4}` : 'Carte bancaire, Apple Pay ou Google Pay'}</Text>
-            <Text variant="callout" tone="secondary">
-              {deferred
-                ? "Votre carte est enregistrée maintenant ; l'empreinte bancaire sera faite 24 h avant le rendez-vous."
-                : "Empreinte bancaire du montant total : rien n'est débité avant le code de fin."}
-            </Text>
-          </View>
-        </Card>
+        {onRequest ? null : (
+          <Card variant="brand" padding="md" style={{ flexDirection: 'row', gap: t.spacing.md, alignItems: 'center' }}>
+            <Icon icon={CreditCard} color={t.colors.text.brand} />
+            <View style={{ flex: 1 }}>
+              <Text variant="bodyStrong">{card ? `${card.brand.toUpperCase()} •••• ${card.last4}` : 'Carte bancaire, Apple Pay ou Google Pay'}</Text>
+              <Text variant="callout" tone="secondary">
+                {deferred
+                  ? "Votre carte est enregistrée maintenant ; l'empreinte bancaire sera faite 24 h avant le rendez-vous."
+                  : "Empreinte bancaire du montant total : rien n'est débité avant le code de fin."}
+              </Text>
+            </View>
+          </Card>
+        )}
 
         {checkout.error ? (
           <Card variant="outline" style={{ gap: t.spacing.sm }} testID="payment-error">

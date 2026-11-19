@@ -39,6 +39,7 @@ export interface StatusMeta {
 
 const STATUS_STYLE: Record<BookingStatus, { tone: Tone; icon: LucideIcon }> = {
   pending_payment: { tone: 'warning', icon: CreditCard },
+  requested: { tone: 'warning', icon: Clock },
   searching: { tone: 'info', icon: Search },
   accepted: { tone: 'info', icon: UserCheck },
   en_route: { tone: 'info', icon: Car },
@@ -56,6 +57,7 @@ const STATUS_STYLE: Record<BookingStatus, { tone: Tone; icon: LucideIcon }> = {
 /** Libellés vus par l'artisan quand ils diffèrent de ceux du client. */
 const ARTISAN_LABELS: Partial<Record<BookingStatus, string>> = {
   pending_payment: 'Paiement client en attente',
+  requested: 'Demande à traiter',
   searching: 'En attente d\'acceptation',
   en_route: 'En route',
   arrived: 'Sur place',

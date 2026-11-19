@@ -54,3 +54,12 @@ Le menu est filtré et l'accès direct par URL est bloqué côté UI ; l'API res
 ## Design
 
 Tokens du plan (section 2) dans `src/app/globals.css` au format shadcn (clair et sombre) : primaire `#8A6A4A`, surface `#F1E4D3`, urgent `#C8102E`, succès `#1E7F4F`, alerte `#B26B00`, info `#1F5FBF`, couleurs métier. Police Inter. Le statut n'est jamais porté par la seule couleur (icône + libellé).
+
+## Démo en ligne (sans API)
+
+`NEXT_PUBLIC_DEMO=1` remplace l'API par les réponses enregistrées dans `src/lib/demo/fixtures.json`, rejouées dans le navigateur (pas de connexion, actions conservées jusqu'au rechargement).
+
+```bash
+pnpm demo:record   # API locale lancée avec le seed : enregistre les réponses du compte admin
+pnpm demo:deploy   # build et déploiement Vercel (projet depano-admin-demo)
+```

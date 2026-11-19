@@ -12,6 +12,7 @@ import {
   Screen,
   Chip,
   SkeletonList,
+  StaggerItem,
   Text,
   TextField,
   useTheme,
@@ -45,9 +46,9 @@ const TABS: { value: Tab; label: string; icon: typeof Star }[] = [
 const CANCELLED = ['cancelled_by_client', 'cancelled_by_artisan', 'expired'];
 
 /** Activité : réservations, annulations, avis (réponse publique), messages. */
-export function ActivityScreen() {
+export function ActivityScreen({ initialTab = 'bookings' }: { initialTab?: Tab }) {
   const t = useTheme();
-  const [tab, setTab] = useState<Tab>('bookings');
+  const [tab, setTab] = useState<Tab>(initialTab);
   return (
     <Screen inTabs testID="activity-screen">
       <Stack.Screen options={{ title: 'Activité' }} />
@@ -114,15 +115,16 @@ function Bookings({ cancelled }: { cancelled: boolean }) {
           ) : null}
           {d.items
             .filter((b) => CANCELLED.includes(b.status) === cancelled)
-            .map((b) => (
-              <InterventionCard
-                key={b.id}
-                booking={b}
-                perspective="artisan"
-                onPress={() =>
-                  router.push({ pathname: '/pro/interventions/[id]', params: { id: b.id } })
-                }
-              />
+            .map((b, i) => (
+              <StaggerItem key={b.id} index={i}>
+                <InterventionCard
+                  booking={b}
+                  perspective="artisan"
+                  onPress={() =>
+                    router.push({ pathname: '/pro/interventions/[id]', params: { id: b.id } })
+                  }
+                />
+              </StaggerItem>
             ))}
         </View>
       )}
@@ -150,24 +152,25 @@ function Reviews() {
           <View style={{ gap: t.spacing.sm }}>
             {d.pages
               .flatMap((p) => p.items)
-              .map((r) => (
-                <ReviewCard
-                  key={r.id}
-                  r={r}
-                  footer={
-                    r.reply ? null : (
-                      <Button
-                        label="Répondre publiquement"
-                        icon={MessageSquareReply}
-                        variant="ghost"
-                        size="sm"
-                        style={{ alignSelf: 'flex-start' }}
-                        onPress={() => setReplyTo(r)}
-                        testID={`reply-${r.id}`}
-                      />
-                    )
-                  }
-                />
+              .map((r, i) => (
+                <StaggerItem key={r.id} index={i}>
+                  <ReviewCard
+                    r={r}
+                    footer={
+                      r.reply ? null : (
+                        <Button
+                          label="Répondre publiquement"
+                          icon={MessageSquareReply}
+                          variant="ghost"
+                          size="sm"
+                          style={{ alignSelf: 'flex-start' }}
+                          onPress={() => setReplyTo(r)}
+                          testID={`reply-${r.id}`}
+                        />
+                      )
+                    }
+                  />
+                </StaggerItem>
               ))}
             {q.hasNextPage ? (
               <Button

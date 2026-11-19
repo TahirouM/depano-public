@@ -63,6 +63,7 @@ export interface BookingJobs {
   'reminder': { bookingId: string; kind: 'day_before' | 'hour_before' };
   'authorize-scheduled': { bookingId: string };
   'quote-expire': { bookingId: string; quoteId: string };
+  'request-expire': { bookingId: string };
 }
 export interface FileJobs {
   'thumbnail': { fileId: string };
@@ -74,4 +75,5 @@ export interface MaintenanceJobs {
   'document-expiry': Record<string, never>;
   'data-retention': Record<string, never>;
   'reliability': Record<string, never>;
+  'promotion-renew': Record<string, never>;
 }

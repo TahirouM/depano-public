@@ -22,6 +22,7 @@ import { useSwitchRole } from '@/components/RoleSwitch';
 import { formatPhone } from '@/features/auth/flow';
 import { useIsSignedIn, useMe } from '@/lib/query/hooks';
 import { useRequireAuth } from '@/lib/useRequireAuth';
+import { ClientProfileScreen } from './ClientProfileScreen';
 
 interface Row {
   title: string;
@@ -59,6 +60,11 @@ const ARTISAN_STATUS_LABEL: Record<(typeof ARTISAN_STATUSES)[number], string> = 
 
 /** Onglet Profil (client ou artisan) : identité, raccourcis, changement d'espace, paramètres. */
 export function ProfileScreen({ as }: { as: 'client' | 'artisan' }) {
+  if (as === 'client') return <ClientProfileScreen />;
+  return <SpaceProfileScreen as={as} />;
+}
+
+function SpaceProfileScreen({ as }: { as: 'client' | 'artisan' }) {
   const t = useTheme();
   const signedIn = useIsSignedIn();
   const me = useMe();

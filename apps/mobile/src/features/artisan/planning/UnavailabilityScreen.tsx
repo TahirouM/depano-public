@@ -14,8 +14,10 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { api, errorMessage } from '@/lib/api';
 import { qk } from '@/lib/query/keys';
+import { PLANNING_PREFIX } from '../queries';
 import { parseFrDate } from '../components/DocumentUpload';
 import { addDays } from '../dates';
+import { isoToFr, maskDate, maskTime, toIso, validTime } from './form';
 
 const REASONS = [
   'Congés',
@@ -24,24 +26,6 @@ const REASONS = [
   'Arrêt maladie',
   'Chantier hors DEPANO',
 ];
-
-const maskDate = (v: string) => {
-  const d = v.replace(/\D/g, '').slice(0, 8);
-  return [d.slice(0, 2), d.slice(2, 4), d.slice(4)].filter(Boolean).join('/');
-};
-const maskTime = (v: string) => {
-  const d = v.replace(/\D/g, '').slice(0, 4);
-  return d.length > 2 ? `${d.slice(0, 2)}:${d.slice(2)}` : d;
-};
-const isoToFr = (iso: string) => iso.split('-').reverse().join('/');
-const validTime = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
-
-/** Date locale (YYYY-MM-DD) + heure → ISO avec fuseau. */
-function toIso(day: string, time: string): string {
-  const [y, m, d] = day.split('-').map(Number);
-  const [h, mi] = time.split(':').map(Number);
-  return new Date(y!, m! - 1, d!, h, mi).toISOString();
-}
 
 /** Ajout d'une indisponibilité personnelle (congés, rendez-vous…) : bloque les créneaux. */
 export function UnavailabilityScreen({ date }: { date?: string }) {
@@ -62,9 +46,9 @@ export function UnavailabilityScreen({ date }: { date?: string }) {
 
   const add = useMutation({
     mutationFn: (b: { startsAt: string; endsAt: string; reason?: string }) =>
-      api.artisan.addException(b),
+      api.artisan.addException({ ...b, kind: 'unavailable' }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['artisan', 'planning'] });
+      void qc.invalidateQueries({ queryKey: PLANNING_PREFIX });
       void qc.invalidateQueries({ queryKey: qk.artisan.exceptions });
       toast.success('Indisponibilité ajoutée. Ces créneaux ne sont plus réservables.');
       router.back();

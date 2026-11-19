@@ -1,0 +1,15 @@
+[Unit]
+Description=DEPANO API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/depano/apps/api
+EnvironmentFile=/opt/depano/.env
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -7,6 +7,7 @@ import { Avatar } from './Avatar';
 import { Badge } from './Badge';
 import { Card } from './Card';
 import { Icon } from './Icon';
+import { IconCircle } from './IconCircle';
 import { bookingStatusMeta, DOMAIN_ICONS, type Perspective } from './meta';
 import { StatusChip } from './StatusChip';
 import { Text } from './Text';
@@ -19,7 +20,6 @@ export interface InterventionCardProps {
 
 export function InterventionCard({ booking: b, onPress, perspective = 'client' }: InterventionCardProps) {
   const t = useTheme();
-  const domainC = t.colors.domain[b.domain];
   const when = b.scheduledAt ?? b.createdAt;
   const status = bookingStatusMeta(b.status, perspective);
   const a11y = [
@@ -37,9 +37,7 @@ export function InterventionCard({ booking: b, onPress, perspective = 'client' }
   return (
     <Card onPress={onPress} accessibilityLabel={a11y} accessibilityHint="Ouvre le détail de l'intervention">
       <View style={[styles.row, { gap: t.spacing.md }]}>
-        <View style={[styles.domain, { backgroundColor: domainC.soft, borderRadius: t.radius.md }]}>
-          <Icon icon={DOMAIN_ICONS[b.domain]} color={domainC.text} />
-        </View>
+        <IconCircle icon={DOMAIN_ICONS[b.domain]} size={48} />
         <View style={styles.flex}>
           <View style={[styles.row, { gap: t.spacing.xs }]}>
             {b.kind === 'urgent' ? <Icon icon={Siren} size={16} color={t.colors.tone.urgent.text} /> : null}
@@ -79,7 +77,6 @@ export function InterventionCard({ booking: b, onPress, perspective = 'client' }
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   between: { justifyContent: 'space-between', flexWrap: 'wrap' },
-  domain: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1, gap: 2 },
   shrink: { flexShrink: 1 },
 });

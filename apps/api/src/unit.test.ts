@@ -78,19 +78,40 @@ describe('règles', () => {
     totalCents: 14500,
     authorizedCents: 14500,
     travelOnly: false,
+    discountCents: 0,
   } as any;
 
   it('annulation : retard artisan > 30 min ⇒ gratuite', () => {
     const now = new Date();
     const scheduledAt = new Date(now.getTime() - 45 * 60_000);
     expect(clientCancellationTerms({ ...base, scheduledAt }, now)).toEqual({ free: true, feeCents: 0 });
-    expect(clientCancellationTerms({ ...base, scheduledAt: new Date(now.getTime() + 3600_000) }, now)).toEqual({ free: false, feeCents: 2500 });
+    const bookedLongAgo = { ...base, createdAt: new Date(now.getTime() - 3 * 3600_000) };
+    expect(clientCancellationTerms({ ...bookedLongAgo, scheduledAt: new Date(now.getTime() - 45 * 60_000) }, now)).toEqual({ free: true, feeCents: 0 });
+    expect(clientCancellationTerms({ ...bookedLongAgo, scheduledAt: new Date(now.getTime() + 3600_000) }, now)).toEqual({ free: false, feeCents: 2500 });
+  });
+
+  it('annulation : gratuite pendant 1 h après la prise de RDV, quelle que soit la date du RDV', () => {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 30 * 60_000);
+    const far = new Date(now.getTime() + 10 * 86_400_000);
+    const at = (minutesAgo: number) => new Date(now.getTime() - minutesAgo * 60_000);
+    expect(clientCancellationTerms({ ...base, createdAt: at(10), scheduledAt: soon }, now).free).toBe(true);
+    expect(clientCancellationTerms({ ...base, createdAt: at(59), scheduledAt: far }, now).free).toBe(true);
+    // Au-delà d'1 h : frais de déplacement, même pour un RDV dans 10 jours…
+    expect(clientCancellationTerms({ ...base, createdAt: at(61), scheduledAt: far }, now)).toEqual({ free: false, feeCents: 2500 });
+    // … sauf garantie annulation, ou demande pas encore confirmée par l'artisan.
+    expect(clientCancellationTerms({ ...base, createdAt: at(61), scheduledAt: far, withGuarantee: true }, now).free).toBe(true);
+    expect(clientCancellationTerms({ ...base, status: 'requested', createdAt: at(600), scheduledAt: far }, now).free).toBe(true);
+    expect(clientCancellationTerms({ ...base, status: 'pending_payment', createdAt: at(600), scheduledAt: far }, now).free).toBe(true);
   });
 
   it('montant de clôture', () => {
     expect(closingAmount(base, 16000)).toBe(14500);
     expect(closingAmount({ ...base, authorizedCents: 20000 }, 16000)).toBe(16000);
     expect(closingAmount({ ...base, travelOnly: true }, null)).toBe(2500);
+    // Réduction parrainage : déduite du devis, jamais du déplacement seul.
+    expect(closingAmount({ ...base, discountCents: 1000, authorizedCents: 20000 }, 16000)).toBe(15000);
+    expect(closingAmount({ ...base, discountCents: 1000, travelOnly: true }, null)).toBe(2500);
   });
 });
 

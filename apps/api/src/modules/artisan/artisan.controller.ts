@@ -6,6 +6,7 @@ import {
   ArtisanServicesBody,
   AvailabilityExceptionBody,
   AvailabilityRulesBody,
+  CustomServiceBody,
   PlanningQuery,
   SiretLookupBody,
   UrgentAvailabilityBody,
@@ -15,6 +16,7 @@ import { ArtisanOnly, CurrentArtisan, CurrentUser, type ArtisanContext, type Aut
 import { IdParam } from '../../common/params';
 import { ZBody, ZQuery } from '../../common/zod';
 import { ArtisanService } from './artisan.service';
+import { PromotionService } from './promotion.service';
 import { DispatchService } from '../dispatch/dispatch.service';
 import { ReviewsService } from '../catalog/reviews.service';
 
@@ -28,6 +30,7 @@ export class ArtisanController {
     @Inject(ArtisanService) private readonly artisans: ArtisanService,
     @Inject(DispatchService) private readonly dispatch: DispatchService,
     @Inject(ReviewsService) private readonly reviews: ReviewsService,
+    @Inject(PromotionService) private readonly promotion: PromotionService,
   ) {}
 
   /** Accessible à tout utilisateur connecté : crée le brouillon de profil artisan. */
@@ -53,6 +56,19 @@ export class ArtisanController {
   @Put('services')
   setServices(@CurrentArtisan() a: ArtisanContext, @ZBody(ArtisanServicesBody) body: z.output<typeof ArtisanServicesBody>) {
     return this.artisans.setServices(a, body);
+  }
+
+  /** Motif personnel (« + » de l'écran Tarifs) : créé actif, réservé à cet artisan. */
+  @ArtisanOnly()
+  @Post('services/custom')
+  addCustomService(@CurrentArtisan() a: ArtisanContext, @ZBody(CustomServiceBody) body: z.output<typeof CustomServiceBody>) {
+    return this.artisans.addCustomService(a, body);
+  }
+
+  @ArtisanOnly()
+  @Delete('services/custom/:serviceId')
+  deleteCustomService(@CurrentArtisan() a: ArtisanContext, @IdParam('serviceId') serviceId: string) {
+    return this.artisans.deleteCustomService(a, serviceId);
   }
 
   @ArtisanOnly()
@@ -154,6 +170,26 @@ export class ArtisanController {
   @Get('stats')
   stats(@CurrentArtisan() a: ArtisanContext) {
     return this.artisans.stats(a);
+  }
+
+  @ArtisanOnly()
+  @Get('promotion')
+  promotionStatus(@CurrentArtisan() a: ArtisanContext) {
+    return this.promotion.get(a.id);
+  }
+
+  @ArtisanOnly({ approved: true })
+  @Post('promotion/subscribe')
+  @HttpCode(200)
+  subscribePromotion(@CurrentArtisan() a: ArtisanContext) {
+    return this.promotion.subscribe(a);
+  }
+
+  @ArtisanOnly()
+  @Post('promotion/cancel')
+  @HttpCode(200)
+  cancelPromotion(@CurrentArtisan() a: ArtisanContext) {
+    return this.promotion.cancel(a);
   }
 
   @ArtisanOnly()

@@ -3,6 +3,7 @@ import { Button, Card, Text, useTheme } from '@depano/ui';
 import { router } from 'expo-router';
 import { CircleAlert, Hourglass, ShieldAlert, UserPen } from 'lucide-react-native';
 import { View } from 'react-native';
+import { features } from '@/lib/env';
 
 const COPY: Record<
   Exclude<ArtisanStatus, 'approved'>,
@@ -21,7 +22,9 @@ const COPY: Record<
   },
   pending_review: {
     title: 'Compte en vérification',
-    body: 'Un conseiller vérifie votre dossier sous 48 h ouvrées. Les urgences seront débloquées dès la validation.',
+    body: features.urgent
+      ? 'Un conseiller vérifie votre dossier sous 48 h ouvrées. Les urgences seront débloquées dès la validation.'
+      : 'Un conseiller vérifie votre dossier sous 48 h ouvrées. Vous recevrez des demandes de rendez-vous dès la validation.',
     cta: 'Voir l’avancement',
     href: '/pro/onboarding/verification',
   },

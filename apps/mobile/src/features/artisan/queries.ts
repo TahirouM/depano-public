@@ -1,4 +1,10 @@
-import type { ArtisanPrivateProfileDto, BookingDetailDto, UrgentOfferDto } from '@depano/schemas';
+import type {
+  ArtisanPrivateProfileDto,
+  BookingDetailDto,
+  NotFeasibleBody,
+  RespondRequestBody,
+  UrgentOfferDto,
+} from '@depano/schemas';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { useIsSignedIn } from '@/lib/query/hooks';
@@ -158,5 +164,38 @@ export function setBookingDetail(qc: ReturnType<typeof useQueryClient>, b: Booki
   qc.setQueryData(qk.bookings.detail(b.id), b);
   void qc.invalidateQueries({ queryKey: qk.bookings.lists });
   void qc.invalidateQueries({ queryKey: qk.artisan.dashboard });
+  void qc.invalidateQueries({ queryKey: PLANNING_PREFIX });
   void qc.invalidateQueries({ queryKey: qk.badges });
+}
+
+/** Préfixe de toutes les périodes du planning (invalidation après un changement). */
+export const PLANNING_PREFIX = ['artisan', 'planning'] as const;
+
+/** Réponse à une demande de RDV : accepter, refuser, ou chiffrer une demande « Autre ». */
+export function useRespondRequest(bookingId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: Partial<RespondRequestBody> & { accept: boolean }) =>
+      api.bookings.respondRequest(bookingId, b),
+    onSuccess: (b) => setBookingDetail(qc, b),
+  });
+}
+
+/** Note privée de l'artisan sur une intervention (jamais montrée au client). */
+export function useArtisanNote(bookingId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (note: string | null) => api.bookings.setArtisanNote(bookingId, { note }),
+    onSuccess: (b) => setBookingDetail(qc, b),
+  });
+}
+
+/** Intervention non réalisable : frais de déplacement facturés, puis annulation ou report. */
+export function useNotFeasible(bookingId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: Omit<NotFeasibleBody, 'photoFileIds'> & { photoFileIds: string[] }) =>
+      api.bookings.notFeasible(bookingId, b),
+    onSuccess: (b) => setBookingDetail(qc, b),
+  });
 }

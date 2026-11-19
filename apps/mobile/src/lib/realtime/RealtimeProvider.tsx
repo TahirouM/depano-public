@@ -7,7 +7,7 @@ import { io, type Socket } from 'socket.io-client';
 import { useAppStore } from '@/stores/app';
 import { selectIsSignedIn, useAuthStore } from '@/stores/auth';
 import { refreshTokens } from '../api';
-import { env } from '../env';
+import { env, features } from '../env';
 import { createRealtimeHandlers } from './handlers';
 
 export type DepanoSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -30,7 +30,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const refreshing = useRef(false);
 
   useEffect(() => {
-    if (!signedIn) {
+    // Démo statique : pas de serveur temps réel.
+    if (!signedIn || env.demo) {
       setState({ socket: null, connected: false });
       return;
     }
@@ -44,7 +45,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     const handlers = createRealtimeHandlers(qc, {
       // Demande d'urgence : plein écran si l'artisan est dans son espace.
       onOffer: (offerId) => {
-        if (useAppStore.getState().activeRole === 'artisan') router.push({ pathname: '/pro/offre/[id]', params: { id: offerId } });
+        if (features.urgent && useAppStore.getState().activeRole === 'artisan') router.push({ pathname: '/pro/offre/[id]', params: { id: offerId } });
       },
     });
     for (const [event, handler] of Object.entries(handlers)) {

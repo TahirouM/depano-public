@@ -86,8 +86,11 @@ describe('Parcours urgence de bout en bout (paiement factice)', () => {
     expect(cDetail.conversationId).toBeTruthy();
     expect(cDetail.completionCode).toMatch(/^\d{4}$/);
     expect(cDetail.allowedTransitions).toEqual(expect.arrayContaining(['cancelled_by_client', 'disputed']));
-    expect(cDetail.cancellationIsFree).toBe(false);
-    expect(cDetail.cancellationFeeCents).toBe(2500);
+    // Règle d'annulation : gratuite pendant 1 h après la prise de RDV (y compris en urgence), puis frais de déplacement.
+    expect(cDetail.cancellationIsFree).toBe(true);
+    expect(cDetail.cancellationFeeCents).toBe(0);
+    await ctx.db.update(s.bookings).set({ createdAt: new Date(Date.now() - 61 * 60_000) }).where(eq(s.bookings.id, id));
+    expect((await call(ctx, 'GET', `/bookings/${id}`, { token: client })).body).toMatchObject({ cancellationIsFree: false, cancellationFeeCents: 2500 });
     const aDetail = (await call(ctx, 'GET', `/bookings/${id}`, { token: winner })).body;
     expect(aDetail.completionCode).toBeNull();
     expect(aDetail.allowedTransitions).toEqual(expect.arrayContaining(['en_route', 'cancelled_by_artisan']));

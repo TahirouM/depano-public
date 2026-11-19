@@ -1,7 +1,7 @@
 import { TabStack } from '@/components/TabStack';
 
-export const unstable_settings = { initialRouteName: 'index' };
+export const unstable_settings = { anchor: 'index' };
 
 export default function Layout() {
-  return <TabStack rootTitle="Planning" />;
+  return <TabStack rootTitle="Mon planning" />;
 }

@@ -12,11 +12,11 @@ export const spacing = {
 } as const;
 export type SpacingToken = keyof typeof spacing;
 
-/** Champs 8 / cartes 12 / sheets 20 / chips plein. */
+/** Champs 12 / cartes et boutons 16 / sheets 24 / chips et créneaux plein. */
 export const radius = {
-  sm: 8,
-  md: 12,
-  lg: 20,
+  sm: 12,
+  md: 16,
+  lg: 24,
   full: 999,
 } as const;
 export type RadiusToken = keyof typeof radius;

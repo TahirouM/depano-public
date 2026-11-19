@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import { View } from 'react-native';
 import { askPermission, getPermissionState, openSystemSettings, type PermissionState } from '@/lib/permissions';
 import { errorMessage } from '@/lib/api';
+import { features } from '@/lib/env';
 import { useNotificationPrefs, useUpdateNotificationPrefs } from '@/lib/query/hooks';
 
 /** Notifications : état de la permission système + préférences push par type (enregistrées sur le compte). */
@@ -50,7 +51,10 @@ export default function NotificationSettings() {
           <Switch label="Offres et nouveautés" value={prefs.marketing} onValueChange={(v) => setPref('marketing', v)} />
         </View>
         <Text variant="caption" tone="secondary">
-          Ces réglages concernent les notifications push : tout reste visible dans l'onglet Notifications. Les demandes d'urgence (artisans), la sécurité du compte et les paiements sont toujours envoyés.
+          Ces réglages concernent les notifications push : tout reste visible dans l'onglet Notifications.{' '}
+          {features.urgent
+            ? "Les demandes d'urgence (artisans), la sécurité du compte et les paiements sont toujours envoyés."
+            : 'La sécurité du compte et les paiements sont toujours envoyés.'}
         </Text>
       </View>
     </Screen>

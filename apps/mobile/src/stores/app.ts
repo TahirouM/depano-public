@@ -5,6 +5,13 @@ import { asyncJSONStorage } from './storage';
 export type ActiveRole = 'client' | 'artisan';
 export type SchemePreference = 'system' | 'light' | 'dark';
 
+/** Lieu de recherche choisi à la main (ville, adresse) : prioritaire sur la position. */
+export interface SearchPlace {
+  lat: number;
+  lng: number;
+  label: string;
+}
+
 export interface AppState {
   onboardingSeen: boolean;
   activeRole: ActiveRole;
@@ -13,11 +20,14 @@ export interface AppState {
   permissionAsked: { location: boolean; notifications: boolean };
   /** Dernier jeton push enregistré côté API, par utilisateur. */
   pushToken: { token: string; userId: string } | null;
+  /** null : position de l'appareil (si autorisée), sinon adresse par défaut, sinon Marseille. */
+  searchPlace: SearchPlace | null;
   setOnboardingSeen: () => void;
   setActiveRole: (r: ActiveRole) => void;
   setScheme: (s: SchemePreference) => void;
   markPermissionAsked: (k: 'location' | 'notifications') => void;
   setPushToken: (v: AppState['pushToken']) => void;
+  setSearchPlace: (p: SearchPlace | null) => void;
   resetForSignOut: () => void;
 }
 
@@ -29,11 +39,13 @@ export const useAppStore = create<AppState>()(
       scheme: 'light',
       permissionAsked: { location: false, notifications: false },
       pushToken: null,
+      searchPlace: null,
       setOnboardingSeen: () => set({ onboardingSeen: true }),
       setActiveRole: (activeRole) => set({ activeRole }),
       setScheme: (scheme) => set({ scheme }),
       markPermissionAsked: (k) => set((s) => ({ permissionAsked: { ...s.permissionAsked, [k]: true } })),
       setPushToken: (pushToken) => set({ pushToken }),
+      setSearchPlace: (searchPlace) => set({ searchPlace }),
       resetForSignOut: () => set({ activeRole: 'client', pushToken: null }),
     }),
     {

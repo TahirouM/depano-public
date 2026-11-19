@@ -1,9 +1,10 @@
-import { ArtisanCard, Screen, SkeletonList, useTheme } from '@depano/ui';
+import { ArtisanCard, Screen, SkeletonList, StaggerItem, useTheme } from '@depano/ui';
 import { router, Stack } from 'expo-router';
 import { Heart } from 'lucide-react-native';
 import { View } from 'react-native';
 import { AuthGate } from '@/components/AuthGate';
 import { QueryView } from '@/components/QueryView';
+import { features } from '@/lib/env';
 import { useFavorites, useToggleFavorite } from '../queries';
 
 /** Favoris : artisans enregistrés, retrait en optimiste. */
@@ -30,14 +31,16 @@ function Inner() {
       >
         {(list) => (
           <View style={{ gap: t.spacing.md }} testID="favorites">
-            {list.map((a) => (
-              <ArtisanCard
-                key={a.id}
-                artisan={a}
-                favorite
-                onToggleFavorite={() => toggle.mutate({ artisan: a, favorite: false })}
-                onPress={() => router.push({ pathname: '/artisan/[id]', params: { id: a.id } })}
-              />
+            {list.map((a, i) => (
+              <StaggerItem key={a.id} index={i}>
+                <ArtisanCard
+                  artisan={a}
+                  favorite
+                  showUrgent={features.urgent}
+                  onToggleFavorite={() => toggle.mutate({ artisan: a, favorite: false })}
+                  onPress={() => router.push({ pathname: '/artisan/[id]', params: { id: a.id } })}
+                />
+              </StaggerItem>
             ))}
           </View>
         )}

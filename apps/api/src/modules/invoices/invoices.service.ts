@@ -25,6 +25,8 @@ interface Line {
 }
 
 const vatOf = (ttc: number, rate = DEFAULT_VAT_RATE) => Math.round(ttc - ttc / (1 + rate));
+/** Réduction parrainage (financée par DEPANO) : jamais sur un déplacement seul ni des frais d'annulation. */
+const discountLine = (cents: number): Line => ({ label: 'Réduction parrainage', quantity: 1, unitPriceCents: -cents, totalCents: -cents });
 
 /** Facture de prestation (artisan → client) et facture de commission (DEPANO → artisan), PDF via pdfkit. */
 @Injectable()
@@ -65,12 +67,14 @@ export class InvoicesService {
     } else if (quote) {
       const ql = await db.select().from(quoteLines).where(eq(quoteLines.quoteId, quote.id)).orderBy(quoteLines.position);
       lines = ql.map((l) => ({ label: l.label, quantity: l.quantity, unitPriceCents: l.unitPriceCents, totalCents: l.totalCents }));
+      if (b.discountCents) lines.push(discountLine(b.discountCents));
     } else {
       lines = [
         { label: svc?.name ?? b.problemReason, quantity: 1, unitPriceCents: b.basePriceCents, totalCents: b.basePriceCents },
         { label: 'Déplacement', quantity: 1, unitPriceCents: b.travelFeeCents, totalCents: b.travelFeeCents },
         ...(b.urgentFeeCents ? [{ label: "Frais d'urgence", quantity: 1, unitPriceCents: b.urgentFeeCents, totalCents: b.urgentFeeCents }] : []),
         ...(b.guaranteeCents ? [{ label: 'Garantie annulation', quantity: 1, unitPriceCents: b.guaranteeCents, totalCents: b.guaranteeCents }] : []),
+        ...(b.discountCents ? [discountLine(b.discountCents)] : []),
       ];
     }
     // Ajustement au montant réellement capturé (capture partielle après litige…)

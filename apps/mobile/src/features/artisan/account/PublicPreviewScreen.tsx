@@ -26,13 +26,17 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { Stack } from 'expo-router';
 import { Eye, MapPin, Pencil } from 'lucide-react-native';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { QueryView } from '@/components/QueryView';
 import { api, errorMessage } from '@/lib/api';
+import { features } from '@/lib/env';
 import { useMe } from '@/lib/query/hooks';
 import { qk } from '@/lib/query/keys';
 import { useArtisanProfile, useArtisanReviews, useStats } from '../queries';
+
+/** Prestations visibles des clients (les motifs désactivés gardent leur prix mais sont masqués). */
+const activeServices = (p: ArtisanPrivateProfileDto) => p.services.filter((s) => s.active);
 
 /** Carte artisan telle que la voient les clients, reconstruite depuis le profil privé. */
 function toCard(
@@ -51,14 +55,17 @@ function toCard(
     distanceKm: null,
     approxLat: p.baseLat != null ? Math.round(p.baseLat * 100) / 100 : null,
     approxLng: p.baseLng != null ? Math.round(p.baseLng * 100) / 100 : null,
-    fromPriceCents: p.services.length ? Math.min(...p.services.map((s) => s.priceCents)) : null,
-    urgentAvailable: p.urgentAvailable,
+    fromPriceCents: activeServices(p).length
+      ? Math.min(...activeServices(p).map((s) => s.priceCents))
+      : null,
+    urgentAvailable: features.urgent && p.urgentAvailable,
     nextSlotAt: null,
     badges: {
       siretVerified: p.checklist.siret,
       insured: p.checklist.insurance,
       qualifications: p.qualifications,
     },
+    promoted: !!p.promotion?.active,
   };
 }
 
@@ -81,7 +88,7 @@ function Preview({ p }: { p: ArtisanPrivateProfileDto }) {
   const stats = useStats();
   const reviews = useArtisanReviews();
   const [editing, setEditing] = useState(false);
-  const card = toCard(p, me.data?.avatarUrl ?? null, {
+  const card = toCard(p, p.avatarUrl ?? me.data?.avatarUrl ?? null, {
     avg: stats.data?.ratingAvg ?? null,
     count: stats.data?.ratingCount ?? 0,
   });
@@ -102,6 +109,14 @@ function Preview({ p }: { p: ArtisanPrivateProfileDto }) {
         </Card>
         <AccentScope accent="client">
           <View style={{ gap: t.spacing.lg }}>
+            {p.bannerUrl ? (
+              <Image
+                source={{ uri: p.bannerUrl }}
+                style={{ height: 140, borderRadius: t.radius.lg }}
+                contentFit="cover"
+                accessibilityLabel="Bannière"
+              />
+            ) : null}
             <ArtisanCard artisan={card} />
             <View style={{ gap: t.spacing.sm }}>
               <SectionHeader
@@ -123,8 +138,8 @@ function Preview({ p }: { p: ArtisanPrivateProfileDto }) {
             <View style={{ gap: t.spacing.sm }}>
               <SectionHeader title="Tarifs" />
               <Card style={{ gap: t.spacing.sm }}>
-                {p.services.length ? (
-                  p.services.map((s) => (
+                {activeServices(p).length ? (
+                  activeServices(p).map((s) => (
                     <PriceRow
                       key={s.serviceId}
                       label={s.name}
@@ -206,7 +221,8 @@ export function ReviewCard({ r, footer }: { r: ReviewDto; footer?: ReactNode }) 
   );
 }
 
-function BioSheet({
+/** Biographie (2000 caractères) : partagée par « Mon profil » et l'aperçu public. */
+export function BioSheet({
   visible,
   onClose,
   bio,
@@ -218,11 +234,15 @@ function BioSheet({
   const toast = useToast();
   const qc = useQueryClient();
   const [text, setText] = useState(bio);
+  // Réouverture : repart du texte enregistré.
+  useEffect(() => {
+    if (visible) setText(bio);
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = useMutation({
     mutationFn: () => api.artisan.updateProfile({ bio: text.trim() || null }),
     onSuccess: (p) => {
       qc.setQueryData(qk.artisan.profile, p);
-      toast.success('Présentation mise à jour.');
+      toast.success('Biographie mise à jour.');
       onClose();
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -231,7 +251,7 @@ function BioSheet({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title="Votre présentation"
+      title="Biographie"
       footer={
         <Button
           label="Enregistrer"
@@ -244,7 +264,7 @@ function BioSheet({
       }
     >
       <TextField
-        label="Présentation"
+        label="Biographie"
         value={text}
         onChangeText={setText}
         multiline

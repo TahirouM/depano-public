@@ -111,6 +111,8 @@ export function createApiClient(opts: ApiClientOptions) {
       setupIntent: () => post<D.SetupIntentDto>('/me/payment-methods/setup-intent'),
       deletePaymentMethod: (id: string) => del(`/me/payment-methods/${id}`),
       invoices: () => get<D.InvoiceDto[]>('/me/invoices'),
+      referral: () => get<D.ReferralDto>('/me/referral'),
+      applyReferral: (b: In<typeof D.ApplyReferralBody>) => post<D.ApplyReferralResult>('/me/referral/apply', b),
     },
     catalog: {
       domains: () => get<D.DomainDto[]>('/domains'),
@@ -126,6 +128,12 @@ export function createApiClient(opts: ApiClientOptions) {
     bookings: {
       create: (b: In<typeof D.CreateBookingBody>) => post<D.CreateBookingResult>('/bookings', b),
       confirmPayment: (id: string) => post<D.BookingDetailDto>(`/bookings/${id}/confirm-payment`),
+      /** Session de paiement d'une intervention existante (prix proposé accepté, report proposé par l'artisan). */
+      paymentSession: (id: string) => post<D.PaymentSessionDto>(`/bookings/${id}/payment-session`),
+      /** Artisan : accepter / refuser / chiffrer une demande de RDV. */
+      respondRequest: (id: string, b: In<typeof D.RespondRequestBody>) => post<D.BookingDetailDto>(`/bookings/${id}/respond`, b),
+      notFeasible: (id: string, b: In<typeof D.NotFeasibleBody>) => post<D.BookingDetailDto>(`/bookings/${id}/not-feasible`, b),
+      setArtisanNote: (id: string, b: D.ArtisanNoteBody) => put<D.BookingDetailDto>(`/bookings/${id}/artisan-note`, b),
       list: (q: In<typeof D.BookingListQuery>) => get<D.Paginated<D.BookingSummaryDto>>('/bookings', q as Query),
       get: (id: string) => get<D.BookingDetailDto>(`/bookings/${id}`),
       transition: (id: string, b: In<typeof D.TransitionBody>) => post<D.BookingDetailDto>(`/bookings/${id}/transition`, b),
@@ -148,6 +156,9 @@ export function createApiClient(opts: ApiClientOptions) {
       profile: () => get<D.ArtisanPrivateProfileDto>('/artisan/profile'),
       updateProfile: (b: In<typeof D.ArtisanProfileBody>) => patch<D.ArtisanPrivateProfileDto>('/artisan/profile', b),
       setServices: (b: In<typeof D.ArtisanServicesBody>) => put<D.ArtisanPrivateProfileDto>('/artisan/services', b),
+      /** Motif personnel : création (actif d'office) et suppression définitive. */
+      addCustomService: (b: In<typeof D.CustomServiceBody>) => post<D.ArtisanPrivateProfileDto>('/artisan/services/custom', b),
+      deleteCustomService: (serviceId: string) => del<D.ArtisanPrivateProfileDto>(`/artisan/services/custom/${serviceId}`),
       setAvailabilityRules: (b: In<typeof D.AvailabilityRulesBody>) => put<D.ArtisanPrivateProfileDto>('/artisan/availability/rules', b),
       exceptions: () => get<D.AvailabilityExceptionDto[]>('/artisan/availability/exceptions'),
       addException: (b: In<typeof D.AvailabilityExceptionBody>) => post<D.AvailabilityExceptionDto>('/artisan/availability/exceptions', b),
@@ -166,6 +177,9 @@ export function createApiClient(opts: ApiClientOptions) {
       earnings: () => get<D.EarningsDto>('/artisan/earnings'),
       stats: () => get<D.ArtisanStatsDto>('/artisan/stats'),
       reviews: (cursor?: string) => get<D.Paginated<D.ReviewDto>>('/artisan/reviews', { cursor }),
+      promotion: () => get<D.PromotionDto>('/artisan/promotion'),
+      subscribePromotion: () => post<D.PromotionSubscribeResult>('/artisan/promotion/subscribe'),
+      cancelPromotion: () => post<D.PromotionDto>('/artisan/promotion/cancel'),
     },
     files: {
       uploadUrl: (b: In<typeof D.UploadUrlBody>) => post<D.UploadUrlDto>('/files/upload-url', b),

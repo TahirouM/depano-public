@@ -7,6 +7,10 @@ import { secureJSONStorage } from './storage';
  * Session : jetons dans expo-secure-store. Le profil (`Me`) vit dans le cache TanStack Query
  * (clé qk.me), persisté pour la lecture hors ligne.
  */
+/** Démo statique (EXPO_PUBLIC_DEMO=1) : session factice, chargée seulement dans ce build. */
+const demoSession: Pick<AuthState, 'accessToken' | 'refreshToken' | 'userId'> | null =
+  process.env.EXPO_PUBLIC_DEMO === '1' ? (require('@/lib/demo/backend') as typeof import('@/lib/demo/backend')).DEMO_SESSION : null;
+
 export interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
@@ -24,9 +28,10 @@ export interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      accessToken: null,
-      refreshToken: null,
-      userId: null,
+      // Démo statique : déjà connecté, tout est visitable sans saisir de numéro.
+      accessToken: demoSession?.accessToken ?? null,
+      refreshToken: demoSession?.refreshToken ?? null,
+      userId: demoSession?.userId ?? null,
       returnTo: null,
       authReason: null,
       setSession: (t, userId) => set({ accessToken: t.accessToken, refreshToken: t.refreshToken, userId }),

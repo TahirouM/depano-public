@@ -2,13 +2,15 @@ import { PinnedInterventionBar, type PinnedInterventionBarProps } from '@depano/
 import type { BookingSummaryDto } from '@depano/schemas';
 import { router, useSegments, type Href } from 'expo-router';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { features } from '@/lib/env';
 import { useActiveBooking } from '@/lib/query/hooks';
 import { useBookingLive } from '@/lib/realtime/hooks';
 
 /** Route de suivi d'une intervention selon l'espace et le statut. */
 export function interventionHref(b: Pick<BookingSummaryDto, 'id' | 'kind' | 'status'>, as: 'client' | 'artisan'): Href {
   if (as === 'artisan') return { pathname: '/pro/interventions/[id]', params: { id: b.id } };
-  if (b.kind === 'urgent' && b.status === 'searching') return { pathname: '/urgence/[bookingId]/recherche', params: { bookingId: b.id } };
+  // Urgences désactivées : la recherche en direct n'est plus accessible, on ouvre le détail.
+  if (features.urgent && b.kind === 'urgent' && b.status === 'searching') return { pathname: '/urgence/[bookingId]/recherche', params: { bookingId: b.id } };
   if (b.kind === 'urgent' && (b.status === 'accepted' || b.status === 'en_route')) {
     return { pathname: '/urgence/[bookingId]/suivi', params: { bookingId: b.id } };
   }

@@ -11,7 +11,12 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "export:ios": "expo export --platform ios"
+    "export:ios": "expo export --platform ios",
+    "demo:record": "node scripts/record-demo.mjs",
+    "demo:build": "EXPO_PUBLIC_DEMO=1 EXPO_PUBLIC_API_URL=https://demo.depano.invalid expo export --platform web --output-dir dist-vercel --clear && cp vercel.demo.json dist-vercel/vercel.json && node scripts/fix-vercel-assets.mjs dist-vercel",
+    "demo:deploy": "cd dist-vercel && vercel link --yes --project depano-demo && vercel deploy --prod --yes",
+    "lint": "expo lint",
+    "update:preview": "EXPO_PUBLIC_API_URL=https://api.167-114-71-66.sslip.io npx eas-cli@latest update --branch preview --environment preview --platform all"
   },
   "dependencies": {
     "@depano/schemas": "workspace:*",
@@ -51,6 +56,7 @@
     "expo-splash-screen": "~58.0.10",
     "expo-status-bar": "~58.0.3",
     "expo-system-ui": "~58.0.6",
+    "expo-updates": "~58.0.22",
     "expo-web-browser": "~58.0.6",
     "lucide-react-native": "^1.59.0",
     "react": "19.3.0",
@@ -72,6 +78,7 @@
   "devDependencies": {
     "@types/node": "^22.20.5",
     "@types/react": "~19.3.0",
+    "eslint-config-expo": "~58.0.4",
     "typescript": "~6.0.3",
     "vitest": "^3.2.7"
   }

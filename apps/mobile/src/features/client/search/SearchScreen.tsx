@@ -1,6 +1,5 @@
 import { DOMAIN_CODES, DomainCode, formatEuros, type ArtisanCardDto, type ArtisanSearchQuery } from '@depano/schemas';
 import {
-  ArtisanCard,
   BottomSheet,
   Button,
   Chip,
@@ -9,6 +8,7 @@ import {
   IconButton,
   SegmentedControl,
   SkeletonList,
+  StaggerItem,
   Switch,
   Text,
   TextField,
@@ -21,6 +21,7 @@ import { FlatList, View } from 'react-native';
 import { QueryView } from '@/components/QueryView';
 import { useIsSignedIn } from '@/lib/query/hooks';
 import { useRequireAuth } from '@/lib/useRequireAuth';
+import { ArtisanResultCard } from '../components/ArtisanResultCard';
 import { LiveMap } from '../map/LiveMap';
 import type { MapMarker } from '../map/types';
 import { useArtisanSearchInfinite, useDebounced, useFavorites, useToggleFavorite } from '../queries';
@@ -149,7 +150,8 @@ export function SearchScreen() {
             <SkeletonList count={4} />
           </View>
         }
-        isEmpty={(d) => d.pages.every((p) => p.items.length === 0)}
+        // Vue carte : la carte reste affichée même sans résultat (message sous la carte).
+        isEmpty={(d) => view === 'list' && d.pages.every((p) => p.items.length === 0)}
         empty={{
           icon: SearchX,
           title: 'Aucun résultat',
@@ -181,7 +183,7 @@ export function SearchScreen() {
                     accessibilityLabel={`Carte de la zone de recherche, ${markers.length} artisans dans un rayon de 20 km`}
                   />
                   <Text variant="callout" tone="secondary">
-                    Classés du plus proche au plus éloigné · {origin.label}
+                    {items.length ? `Classés du plus proche au plus éloigné · ${origin.label}` : `Aucun artisan dans un rayon de 20 km · ${origin.label}`}
                   </Text>
                 </View>
               ) : (
@@ -191,13 +193,15 @@ export function SearchScreen() {
               )
             }
             ListFooterComponent={results.isFetchingNextPage ? <SkeletonList count={1} /> : undefined}
-            renderItem={({ item }) => (
-              <ArtisanCard
-                artisan={item}
-                onPress={() => router.push({ pathname: '/artisan/[id]', params: { id: item.id } })}
-                favorite={signedIn ? favIds.has(item.id) : false}
-                onToggleFavorite={() => onFav(item)}
-              />
+            renderItem={({ item, index }) => (
+              <StaggerItem index={index}>
+                <ArtisanResultCard
+                  artisan={item}
+                  onPress={() => router.push({ pathname: '/artisan/[id]', params: { id: item.id } })}
+                  favorite={signedIn ? favIds.has(item.id) : false}
+                  onToggleFavorite={() => onFav(item)}
+                />
+              </StaggerItem>
             )}
           />
         )}

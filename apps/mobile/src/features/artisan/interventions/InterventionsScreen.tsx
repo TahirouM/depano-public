@@ -2,10 +2,9 @@ import type { BookingStatus, BookingSummaryDto } from '@depano/schemas';
 import {
   EmptyState,
   IconButton,
-  InterventionCard,
-  Screen,
   SectionHeader,
   SkeletonList,
+  StaggerItem,
   Text,
   useTheme,
 } from '@depano/ui';
@@ -13,11 +12,16 @@ import { router } from 'expo-router';
 import { CalendarX2, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { HeaderBell } from '@/components/HeaderBell';
 import { QueryView } from '@/components/QueryView';
+import { HeroSheetLayout } from '@/features/client/components/HeroSheetLayout';
+import { features } from '@/lib/env';
+import { ArtisanBookingCard } from '../components/ArtisanBookingCard';
 import { addDays, bookingWhen, localDayKey, startOfWeek, weekdayShort, weekLabel } from '../dates';
 import { useArtisanBookings } from '../queries';
 
 export const STATUS_GROUPS: { key: string; title: string; statuses: BookingStatus[] }[] = [
+  { key: 'requests', title: 'Demandes à traiter', statuses: ['requested'] },
   {
     key: 'now',
     title: 'En cours',
@@ -32,7 +36,10 @@ export const STATUS_GROUPS: { key: string; title: string; statuses: BookingStatu
   },
 ];
 
-/** Interventions : liste du jour groupée par statut, navigation par semaine. */
+/**
+ * Interventions : liste du jour groupée par statut, navigation par semaine. Même habillage que les
+ * onglets client (en-tête fixe, feuille de contenu qui le recouvre au défilement).
+ */
 export function InterventionsScreen() {
   const t = useTheme();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
@@ -61,11 +68,24 @@ export function InterventionsScreen() {
   const items = (byDay.get(day) ?? []).sort((a, b) => bookingWhen(a).localeCompare(bookingWhen(b)));
 
   return (
-    <Screen
-      inTabs
+    <HeroSheetLayout
+      testID="pro-interventions"
       refreshing={q.isRefetching}
       onRefresh={() => void q.refetch()}
-      testID="pro-interventions"
+      topBar={
+        <>
+          <View />
+          <HeaderBell />
+        </>
+      }
+      hero={
+        <View style={{ gap: t.spacing.sm }}>
+          <Text variant="display" accessibilityRole="header">
+            Interventions
+          </Text>
+          <Text tone="secondary">Vos demandes, rendez-vous et interventions, jour par jour.</Text>
+        </View>
+      }
     >
       <View style={{ gap: t.spacing.lg }}>
         <View
@@ -164,8 +184,19 @@ export function InterventionsScreen() {
               <EmptyState
                 icon={CalendarX2}
                 title="Aucune intervention ce jour-là"
-                message="Activez « Disponible pour urgences » sur l'accueil ou publiez vos disponibilités pour recevoir des rendez-vous."
-                action={{ label: "Aller à l'accueil", onPress: () => router.push('/pro/accueil') }}
+                message={
+                  features.urgent
+                    ? "Activez « Disponible pour urgences » sur l'accueil ou publiez vos disponibilités pour recevoir des rendez-vous."
+                    : 'Publiez vos disponibilités pour que les clients réservent vos créneaux.'
+                }
+                action={
+                  features.urgent
+                    ? { label: "Aller à l'accueil", onPress: () => router.push('/pro/accueil') }
+                    : {
+                        label: 'Mes disponibilités',
+                        onPress: () => router.push('/pro/profil/disponibilites'),
+                      }
+                }
                 secondaryAction={{
                   label: 'Voir le planning',
                   onPress: () => router.push('/pro/planning'),
@@ -179,18 +210,10 @@ export function InterventionsScreen() {
                   return (
                     <View key={g.key} style={{ gap: t.spacing.sm }}>
                       <SectionHeader title={`${g.title} (${list.length})`} />
-                      {list.map((b) => (
-                        <InterventionCard
-                          key={b.id}
-                          booking={b}
-                          perspective="artisan"
-                          onPress={() =>
-                            router.push({
-                              pathname: '/pro/interventions/[id]',
-                              params: { id: b.id },
-                            })
-                          }
-                        />
+                      {list.map((b, i) => (
+                        <StaggerItem key={b.id} index={i}>
+                          <ArtisanBookingCard booking={b} />
+                        </StaggerItem>
                       ))}
                     </View>
                   );
@@ -200,6 +223,6 @@ export function InterventionsScreen() {
           }
         </QueryView>
       </View>
-    </Screen>
+    </HeroSheetLayout>
   );
 }

@@ -11,6 +11,7 @@ import {
   DocumentType,
   DomainCode,
   FilePurpose,
+  NotFeasibleReason,
   NotificationType,
   PaymentStatus,
   QualificationBadge,
@@ -178,6 +179,8 @@ export type NotificationPrefsBody = z.infer<typeof NotificationPrefsBody>;
 export function notificationPrefCategory(type: NotificationType | string | undefined): keyof NotificationPrefs | null {
   switch (type) {
     case 'booking_created':
+    case 'booking_requested':
+    case 'price_proposed':
     case 'booking_accepted':
     case 'booking_status':
     case 'booking_cancelled':
@@ -297,14 +300,26 @@ export interface ArtisanCardDto {
   urgentAvailable: boolean;
   nextSlotAt: string | null;
   badges: { siretVerified: boolean; insured: boolean; qualifications: QualificationBadge[] };
+  /** Profil mis en avant (abonnement promotion actif) : remonté en tête des résultats « pertinence ». */
+  promoted: boolean;
 }
 
 export interface ArtisanServiceDto {
   serviceId: string;
   name: string;
   domain: DomainCode;
+  /** Entretien, dépannage ou les deux (motifs proposés à la prise de RDV). */
+  kind: 'maintenance' | 'repair' | 'both';
   priceCents: number;
   durationMinutes: number;
+  /** Motif créé par l'artisan lui-même (hors catalogue DEPANO) : il peut le supprimer. */
+  custom: boolean;
+}
+
+/** Prestation vue par l'artisan lui-même : les motifs désactivés gardent leur prix. */
+export interface ArtisanOwnServiceDto extends ArtisanServiceDto {
+  /** false : motif désactivé, invisible des clients (réactivable sans ressaisir le prix). */
+  active: boolean;
 }
 
 export interface ReviewDto {
@@ -321,6 +336,7 @@ export interface ReviewDto {
 
 export interface ArtisanPublicDto extends ArtisanCardDto {
   bio: string | null;
+  bannerUrl: string | null;
   city: string | null;
   radiusKm: number;
   travelFeeCents: number;
@@ -383,6 +399,11 @@ export const CreateBookingBody = z
     problemReason: z.string().max(120),
     problemDescription: z.string().max(2000).optional(),
     problemFileIds: z.array(Uuid).max(6).default([]),
+    /**
+     * RDV pour un besoin hors catalogue (« Autre ») : aucun prix n'est connu, la demande part sans paiement ;
+     * l'artisan propose un prix, le client l'accepte en validant l'empreinte bancaire.
+     */
+    priceOnRequest: z.boolean().default(false),
     withGuarantee: z.boolean().default(false),
     /** Urgence : renonciation expresse au droit de rétractation. */
     waivesWithdrawal: z.boolean().default(false),
@@ -393,7 +414,11 @@ export const CreateBookingBody = z
     if (v.kind === 'scheduled') {
       if (!v.artisanId) ctx.addIssue({ code: 'custom', message: 'Artisan requis', path: ['artisanId'] });
       if (!v.scheduledAt) ctx.addIssue({ code: 'custom', message: 'Créneau requis', path: ['scheduledAt'] });
+      if (v.priceOnRequest && !v.problemDescription?.trim()) {
+        ctx.addIssue({ code: 'custom', message: 'Décrivez votre besoin pour que l’artisan puisse le chiffrer', path: ['problemDescription'] });
+      }
     }
+    if (v.kind === 'urgent' && v.priceOnRequest) ctx.addIssue({ code: 'custom', message: 'Prix sur demande réservé aux rendez-vous', path: ['priceOnRequest'] });
     if (v.kind === 'urgent' && !v.waivesWithdrawal) {
       ctx.addIssue({
         code: 'custom',
@@ -416,7 +441,8 @@ export interface PaymentSessionDto {
 
 export interface CreateBookingResult {
   booking: BookingDetailDto;
-  payment: PaymentSessionDto;
+  /** null pour une demande de prix (« Autre ») : rien à payer tant que l'artisan n'a pas chiffré. */
+  payment: PaymentSessionDto | null;
 }
 
 export const BookingListQuery = z.object({
@@ -486,6 +512,18 @@ export interface BookingSummaryDto {
   city: string;
   counterpart: { id: string; name: string; avatarUrl: string | null } | null;
   unreadMessages: number;
+  /** Demande « Autre » : prix fixé par l'artisan (null tant qu'il n'a pas répondu). */
+  priceOnRequest: boolean;
+  /** L'artisan a accepté (ou chiffré) la demande. */
+  artisanAccepted: boolean;
+  /** RDV reprogrammé par l'artisan à partir d'une intervention non réalisable. */
+  rescheduledFromId: string | null;
+  /** Note privée de l'artisan (visible par lui seul, null pour le client). */
+  artisanNote: string | null;
+  /** Fin prévue du créneau (RDV). */
+  endsAt: string | null;
+  /** Échéance de réponse : de l'artisan pour une demande, du client pour un prix ou un report proposé. */
+  requestExpiresAt: string | null;
 }
 
 export interface BookingDetailDto extends BookingSummaryDto {
@@ -529,8 +567,11 @@ export interface BookingDetailDto extends BookingSummaryDto {
   report: ReportDto | null;
   review: ReviewDto | null;
   dispute: DisputeDto | null;
+  /** null tant que la messagerie n'est pas ouverte (demande non acceptée par l'artisan). */
   conversationId: string | null;
   invoiceId: string | null;
+  /** Intervention non réalisable déclarée par l'artisan. */
+  notFeasible: { reason: NotFeasibleReason; comment: string | null; photoUrls: string[]; rescheduledBookingId: string | null } | null;
   dispatch: { wave: number; contacted: number; radiusKm: number } | null;
   /** Transitions disponibles pour l'appelant. */
   allowedTransitions: BookingStatus[];
@@ -577,6 +618,33 @@ export const ReportBody = z.object({
   travelOnly: z.boolean().default(false),
 });
 export type ReportBody = z.infer<typeof ReportBody>;
+
+/** Réponse de l'artisan à une demande de RDV. Pour une demande « Autre », `priceCents` est obligatoire pour accepter. */
+export const RespondRequestBody = z.object({
+  accept: z.boolean(),
+  /** Prix de la prestation (hors frais de déplacement), demandes « Autre » uniquement. */
+  priceCents: Cents.min(100).max(1_000_000).optional(),
+  /** Durée prévue (minutes), demandes « Autre » : ajuste la plage réservée. */
+  durationMinutes: z.number().int().min(15).max(600).optional(),
+  message: z.string().max(500).optional(),
+});
+export type RespondRequestBody = z.infer<typeof RespondRequestBody>;
+
+/** Intervention impossible sur place : déplacement facturé, puis annulation ou report à une nouvelle date. */
+export const NotFeasibleBody = z
+  .object({
+    reason: NotFeasibleReason,
+    comment: z.string().max(2000).optional(),
+    photoFileIds: z.array(Uuid).max(10).default([]),
+    action: z.enum(['cancel', 'reschedule']),
+    rescheduleAt: IsoDateTime.optional(),
+  })
+  .refine((v) => v.action !== 'reschedule' || !!v.rescheduleAt, { message: 'Choisissez la nouvelle date', path: ['rescheduleAt'] });
+export type NotFeasibleBody = z.infer<typeof NotFeasibleBody>;
+
+/** Note privée de l'artisan sur une intervention (ex. « prévoir un robinet »). */
+export const ArtisanNoteBody = z.object({ note: z.string().max(2000).nullable() });
+export type ArtisanNoteBody = z.infer<typeof ArtisanNoteBody>;
 
 export const CompleteBody = z.object({ code: z.string().regex(/^\d{4}$/) });
 export type CompleteBody = z.infer<typeof CompleteBody>;
@@ -691,6 +759,7 @@ export const ArtisanProfileBody = z.object({
   travelFeeCents: Cents.optional(),
   qualifications: z.array(QualificationBadge).optional(),
   portfolioFileIds: z.array(Uuid).max(20).optional(),
+  bannerFileId: Uuid.optional().nullable(),
 });
 export type ArtisanProfileBody = z.infer<typeof ArtisanProfileBody>;
 
@@ -701,11 +770,23 @@ export const ArtisanServicesBody = z.object({
         serviceId: Uuid,
         priceCents: Cents,
         durationMinutes: z.number().int().min(15).max(600),
+        /** false : désactivé (prix conservé, invisible des clients). */
+        active: z.boolean().default(true),
       }),
     )
     .max(100),
 });
 export type ArtisanServicesBody = z.infer<typeof ArtisanServicesBody>;
+
+/** Motif personnel de l'artisan (hors catalogue), ajouté avec le « + » de l'écran Tarifs. */
+export const CustomServiceBody = z.object({
+  domain: DomainCode,
+  name: z.string().trim().min(3).max(120),
+  kind: z.enum(['maintenance', 'repair', 'both']).default('both'),
+  priceCents: Cents.min(100).max(1_000_000),
+  durationMinutes: z.number().int().min(15).max(600).default(60),
+});
+export type CustomServiceBody = z.infer<typeof CustomServiceBody>;
 
 const HHMM = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 export const AvailabilityRulesBody = z.object({
@@ -715,10 +796,21 @@ export const AvailabilityRulesBody = z.object({
 });
 export type AvailabilityRulesBody = z.infer<typeof AvailabilityRulesBody>;
 
+/** Couleurs proposées pour les événements personnels du planning. */
+export const EVENT_COLORS = ['green', 'blue', 'red', 'orange', 'purple', 'grey'] as const;
+export const EventColor = z.enum(EVENT_COLORS);
+export type EventColor = z.infer<typeof EventColor>;
+
+/**
+ * Indisponibilité ou événement personnel (ex. « Manger avec Grégoire ») : bloque les créneaux dans tous les cas.
+ * `kind: 'personal'` s'affiche dans le planning avec son titre et sa couleur.
+ */
 export const AvailabilityExceptionBody = z.object({
   startsAt: IsoDateTime,
   endsAt: IsoDateTime,
   reason: z.string().max(200).optional(),
+  kind: z.enum(['unavailable', 'personal']).default('unavailable'),
+  color: EventColor.optional().nullable(),
 });
 export type AvailabilityExceptionBody = z.infer<typeof AvailabilityExceptionBody>;
 
@@ -727,6 +819,8 @@ export interface AvailabilityExceptionDto {
   startsAt: string;
   endsAt: string;
   reason: string | null;
+  kind: 'unavailable' | 'personal';
+  color: EventColor | null;
 }
 
 export const ArtisanDocumentBody = z.object({
@@ -780,10 +874,16 @@ export interface ArtisanPrivateProfileDto {
   reliabilityScore: number;
   stripeAccountId: string | null;
   payoutsEnabled: boolean;
-  services: ArtisanServiceDto[];
+  /** Toutes les prestations de l'artisan, actives et désactivées (catalogue + motifs personnels). */
+  services: ArtisanOwnServiceDto[];
   availabilityRules: { weekday: number; start: string; end: string }[];
   documents: ArtisanDocumentDto[];
   portfolioUrls: string[];
+  /** Identifiants des photos de réalisations, dans l'ordre de `portfolioUrls` (pour les retirer). */
+  portfolioFileIds: string[];
+  bannerUrl: string | null;
+  avatarUrl: string | null;
+  promotion: PromotionDto;
   checklist: KycChecklistDto;
   submittedAt: string | null;
   approvedAt: string | null;
@@ -796,10 +896,29 @@ export const UrgentAvailabilityBody = z.object({
 });
 export type UrgentAvailabilityBody = z.infer<typeof UrgentAvailabilityBody>;
 
+/** Abonnement « Promouvoir mon compte » : profil mis en avant dans les résultats. */
+export interface PromotionDto {
+  active: boolean;
+  /** Fin de la période payée. */
+  until: string | null;
+  /** Renouvellement automatique (false après résiliation : reste actif jusqu'à `until`). */
+  autoRenew: boolean;
+  priceCents: number;
+  periodDays: number;
+}
+
+export interface PromotionSubscribeResult {
+  promotion: PromotionDto;
+  /** Paiement à valider dans l'app (Stripe) ; null si déjà actif (prestataire fictif en dev). */
+  payment: PaymentSessionDto | null;
+}
+
 export interface ArtisanDashboardDto {
   today: { count: number; earningsCents: number; completed: number };
   next: BookingSummaryDto | null;
   pendingOffers: UrgentOfferDto[];
+  /** Demandes de RDV en attente de réponse. */
+  pendingRequests: BookingSummaryDto[];
   upcoming: BookingSummaryDto[];
   urgentAvailable: boolean;
   status: ArtisanStatus;
@@ -919,6 +1038,42 @@ export interface BadgesDto {
   notifications: number;
   messages: number;
   activity: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Parrainage                                                          */
+/* ------------------------------------------------------------------ */
+
+export interface ReferralCreditDto {
+  id: string;
+  amountCents: number;
+  /** Prénom de l'ami parrainé ou du parrain. */
+  fromName: string;
+  role: 'referrer' | 'referee';
+  usedAt: string | null;
+  usedBookingId: string | null;
+  createdAt: string;
+}
+
+export interface ReferralDto {
+  code: string;
+  /** Réduction utilisable sur la prochaine intervention (le plus ancien crédit disponible), en centimes. */
+  nextDiscountCents: number;
+  availableCents: number;
+  referredCount: number;
+  /** Un code d'ami peut encore être saisi (une seule fois par compte). */
+  canApplyCode: boolean;
+  credits: ReferralCreditDto[];
+  rewardRange: { minCents: number; maxCents: number };
+}
+
+export const ApplyReferralBody = z.object({ code: z.string().trim().min(4).max(16).transform((v) => v.toUpperCase()) });
+export type ApplyReferralBody = z.infer<typeof ApplyReferralBody>;
+
+export interface ApplyReferralResult {
+  /** Montant tiré au sort, crédité au parrain et au filleul. */
+  amountCents: number;
+  referral: ReferralDto;
 }
 
 /* ------------------------------------------------------------------ */

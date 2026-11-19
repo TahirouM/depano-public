@@ -1,9 +1,11 @@
+import { RULES } from '@depano/schemas';
 import { Button, Card, EmptyState, ErrorState, Icon, Screen, Skeleton, StatusChip, Text, useTheme } from '@depano/ui';
 import { router, Stack, useNavigation } from 'expo-router';
 import { Clock, UserX } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { errorMessage } from '@/lib/api';
+import { features } from '@/lib/env';
 import { useBookingLive } from '@/lib/realtime/hooks';
 import { ArtisanContact } from '../components/ArtisanContact';
 import { CancelSheet } from '../components/CancelSheet';
@@ -33,7 +35,9 @@ export function UrgentTrackingScreen({ bookingId }: { bookingId: string }) {
       leaveFlowTo({ pathname: '/activite/[id]', params: { id: bookingId } });
     } else if (b.status === 'searching') {
       redirected.current = true;
-      router.replace({ pathname: '/urgence/[bookingId]/recherche', params: { bookingId } });
+      // Urgences désactivées : la recherche en direct n'est plus accessible, le détail prend le relais.
+      if (features.urgent) router.replace({ pathname: '/urgence/[bookingId]/recherche', params: { bookingId } });
+      else leaveFlowTo({ pathname: '/activite/[id]', params: { id: bookingId } });
     }
   }, [b, bookingId, navigation, leaveFlowTo]);
 
@@ -61,17 +65,21 @@ export function UrgentTrackingScreen({ bookingId }: { bookingId: string }) {
       <Screen
         footer={
           <View style={{ gap: t.spacing.sm }}>
-            <Button
-              variant="urgent"
-              size="lg"
-              fullWidth
-              label="Relancer la recherche"
-              onPress={() => {
-                prefillUrgentDraft(b);
-                router.replace('/urgence/paiement');
-              }}
-              testID="relaunch-search"
-            />
+            {features.urgent && b.kind === 'urgent' ? (
+              <Button
+                variant="urgent"
+                size="lg"
+                fullWidth
+                label="Relancer la recherche"
+                onPress={() => {
+                  prefillUrgentDraft(b);
+                  router.replace('/urgence/paiement');
+                }}
+                testID="relaunch-search"
+              />
+            ) : (
+              <Button size="lg" fullWidth label="Reprendre rendez-vous" onPress={() => leaveFlowTo('/recherche')} testID="relaunch-search" />
+            )}
             <Button variant="ghost" fullWidth label="Retour à l'accueil" onPress={() => leaveFlowTo('/accueil')} />
           </View>
         }
@@ -81,7 +89,11 @@ export function UrgentTrackingScreen({ bookingId }: { bookingId: string }) {
           fill
           icon={UserX}
           title={`${name} a dû annuler`}
-          message="Ce n'est pas de votre faute. Votre empreinte est libérée et votre demande est prioritaire pour un autre artisan."
+          message={
+            features.urgent && b.kind === 'urgent'
+              ? "Ce n'est pas de votre faute. Votre empreinte est libérée et votre demande est prioritaire pour un autre artisan."
+              : "Ce n'est pas de votre faute. Votre empreinte est libérée : rien ne vous a été prélevé."
+          }
         />
       </Screen>
     );
@@ -106,8 +118,10 @@ export function UrgentTrackingScreen({ bookingId }: { bookingId: string }) {
         : `${name} est en route.`
       : `${name} a accepté votre demande.`;
   const sub = b.status === 'accepted' ? 'Il se prépare à partir. Vous verrez sa position dès son départ.' : 'Position mise à jour en direct.';
-  // L'API rend l'annulation gratuite quand l'artisan dépasse l'ETA de plus de 30 min.
-  const late = b.status === 'en_route' && b.cancellationIsFree && !b.withGuarantee;
+  // L'API rend l'annulation gratuite quand l'artisan dépasse l'ETA de plus de 30 min. Pendant la première
+  // heure après la prise de RDV elle l'est de toute façon : ce n'est alors pas un retard.
+  const freeWindowOver = Date.now() - new Date(b.createdAt).getTime() > RULES.cancellation.freeWithinHoursAfterBooking * 3_600_000;
+  const late = b.status === 'en_route' && b.cancellationIsFree && !b.withGuarantee && freeWindowOver;
   const canCancel = b.allowedTransitions.includes('cancelled_by_client');
 
   return (

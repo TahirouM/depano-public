@@ -36,7 +36,7 @@ const EXT: Record<string, string> = {
 };
 
 export const SIGNED_GET_TTL_SECONDS = 300;
-const PUBLIC_PURPOSES: FilePurpose[] = ['avatar', 'portfolio', 'review'];
+const PUBLIC_PURPOSES: FilePurpose[] = ['avatar', 'portfolio', 'review', 'banner'];
 
 @Injectable()
 export class FilesService {

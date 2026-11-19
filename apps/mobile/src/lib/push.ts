@@ -7,7 +7,7 @@ import { useAppStore } from '@/stores/app';
 import { useAuthStore } from '@/stores/auth';
 import { api } from './api';
 import { resolveDeepLink } from './deepLinks';
-import { env } from './env';
+import { env, features } from './env';
 
 /**
  * Notifications push (expo-notifications).
@@ -30,6 +30,12 @@ export async function configureAndroidChannels() {
     name: 'Interventions et messages',
     importance: Notifications.AndroidImportance.HIGH,
   });
+  // Urgences désactivées (features.urgent) : pas de canal visible dans les réglages Android. Android
+  // restaure les réglages de l'utilisateur si le canal est recréé avec le même identifiant.
+  if (!features.urgent) {
+    await Notifications.deleteNotificationChannelAsync('urgent');
+    return;
+  }
   await Notifications.setNotificationChannelAsync('urgent', {
     name: "Demandes d'urgence",
     importance: Notifications.AndroidImportance.MAX,

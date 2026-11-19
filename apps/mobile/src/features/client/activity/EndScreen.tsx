@@ -1,8 +1,8 @@
 import { DISPUTE_REASON_LABELS, formatEuros } from '@depano/schemas';
-import { Button, Card, EmptyState, ErrorState, Icon, Screen, Skeleton, Text, haptic, useTheme } from '@depano/ui';
+import { Button, Card, EmptyState, ErrorState, Icon, Screen, Skeleton, SuccessCheck, Text, useTheme } from '@depano/ui';
 import { router, Stack } from 'expo-router';
-import { CircleCheck, Hourglass, Scale } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { Hourglass, Scale } from 'lucide-react-native';
+import { useState } from 'react';
 import { View } from 'react-native';
 import { AuthGate } from '@/components/AuthGate';
 import { errorMessage } from '@/lib/api';
@@ -24,11 +24,15 @@ function EndInner({ id }: { id: string }) {
   const live = useBookingLive(id);
   const b = live.data;
   const [disputeOpen, setDisputeOpen] = useState(false);
-  const prev = useRef(b?.status);
-  useEffect(() => {
-    if (prev.current && prev.current !== 'closed' && b?.status === 'closed') haptic('success');
-    prev.current = b?.status;
-  }, [b?.status]);
+  // Clôture survenue en direct sur cet écran (et non déjà clôturée à l'ouverture) : seule cette
+  // transition déclenche le retour haptique « succès », porté par SuccessCheck. Calculé pendant le rendu
+  // (statut précédent mémorisé en state) pour que la coche soit montée avec la bonne valeur.
+  const [prevStatus, setPrevStatus] = useState(b?.status);
+  const [justClosed, setJustClosed] = useState(false);
+  if (b?.status !== prevStatus) {
+    if (prevStatus && prevStatus !== 'closed' && b?.status === 'closed') setJustClosed(true);
+    setPrevStatus(b?.status);
+  }
 
   const header = <Stack.Screen options={{ title: "Fin d'intervention" }} />;
   if (!b) {
@@ -53,12 +57,15 @@ function EndInner({ id }: { id: string }) {
         }
       >
         {header}
-        <EmptyState
-          fill
-          icon={CircleCheck}
-          title="Intervention terminée"
-          message={`Merci ! ${b.capturedCents != null ? `${formatEuros(b.capturedCents)} débités.` : 'Le paiement est en cours.'} Votre facture est disponible dans l'intervention.`}
-        />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: t.spacing.xl, gap: t.spacing.md }} testID="end-closed">
+          <SuccessCheck haptic={justClosed} accessibilityLabel="Intervention terminée" />
+          <Text variant="title2" align="center">
+            Intervention terminée
+          </Text>
+          <Text tone="secondary" align="center">
+            {`Merci ! ${b.capturedCents != null ? `${formatEuros(b.capturedCents)} débités.` : 'Le paiement est en cours.'} Votre facture est disponible dans l'intervention.`}
+          </Text>
+        </View>
       </Screen>
     );
   }

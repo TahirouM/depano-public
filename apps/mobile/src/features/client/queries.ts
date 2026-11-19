@@ -138,6 +138,21 @@ export function useInvoices() {
   return useQuery({ queryKey: qk.invoices, queryFn: api.me.invoices, enabled: signedIn });
 }
 
+/** Parrainage : code, crédits disponibles, historique (compte requis). */
+export function useReferral() {
+  const signedIn = useIsSignedIn();
+  return useQuery({ queryKey: qk.referral, queryFn: api.me.referral, enabled: signedIn, staleTime: 60_000 });
+}
+
+/** Saisie du code d'un ami : montant tiré au sort, crédité aux deux comptes. */
+export function useApplyReferral() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => api.me.applyReferral({ code }),
+    onSuccess: (r) => qc.setQueryData(qk.referral, r.referral),
+  });
+}
+
 export function defaultAddress(list: AddressDto[] | undefined): AddressDto | null {
   if (!list?.length) return null;
   return list.find((a) => a.isDefault) ?? list[0] ?? null;

@@ -3,6 +3,7 @@ import {
   Card,
   ChatBubble,
   DOMAIN_ICONS,
+  EmptyState,
   ErrorState,
   Icon,
   IconButton,
@@ -27,11 +28,11 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 import { router, Stack, useFocusEffect } from 'expo-router';
-import { Camera, ChevronRight, Image as ImageIcon, Mic, Send, Square, Trash2, X } from 'lucide-react-native';
+import { Camera, ChevronRight, Image as ImageIcon, MessageCircleOff, Mic, Send, Square, Trash2, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api, errorMessage, isNetworkError } from '@/lib/api';
+import { ApiError, api, errorMessage, isNetworkError } from '@/lib/api';
 import { newClientId } from '@/lib/id';
 import { useIsOnline } from '@/lib/online';
 import { useConversations, useMessages } from '@/lib/query/hooks';
@@ -238,6 +239,26 @@ function ChatInner({ conversationId, as }: { conversationId: string; as: 'client
   const canVoice = Platform.OS !== 'web';
   const seconds = Math.floor((recState.durationMillis ?? 0) / 1000);
 
+  // Messagerie fermée (demande pas encore acceptée par l'artisan, ou conversation clôturée) : l'API refuse l'accès.
+  if (isChatClosedError(messages.error) && !messages.data) {
+    return (
+      <View style={[styles.flex, { backgroundColor: t.colors.background.canvas }]} testID="chat-closed">
+        <Stack.Screen options={{ title }} />
+        <EmptyState
+          fill
+          icon={MessageCircleOff}
+          title="Messagerie pas encore ouverte"
+          message={
+            as === 'client'
+              ? "La conversation s'ouvre dès que l'artisan accepte votre demande. Vous serez prévenu."
+              : "La conversation s'ouvre dès que vous acceptez la demande du client."
+          }
+          action={{ label: 'Retour', onPress: () => (router.canGoBack() ? router.back() : router.replace(as === 'client' ? '/messages' : '/pro/messages')) }}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.flex, { backgroundColor: t.colors.background.canvas }]}>
       <Stack.Screen options={{ title }} />
@@ -353,6 +374,11 @@ function ChatInner({ conversationId, as }: { conversationId: string; as: 'client
       </Modal>
     </View>
   );
+}
+
+/** 403 / 409 : conversation inaccessible tant que l'artisan n'a pas accepté (`chatIsOpen`). */
+export function isChatClosedError(e: unknown): boolean {
+  return e instanceof ApiError && !e.isNetwork && (e.status === 403 || e.status === 409);
 }
 
 /** Carte d'intervention épinglée en haut du chat. */

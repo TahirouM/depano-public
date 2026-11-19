@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useTheme } from '../theme/ThemeProvider';
 import { MIN_TOUCH } from '../tokens/scale';
+import { usePressScale } from '../utils/pressScale';
 import { Badge } from './Badge';
 import { Icon, type LucideIcon } from './Icon';
 
@@ -17,25 +20,40 @@ export interface IconButtonProps {
   testID?: string;
 }
 
+// Pressable animé : l'échelle au toucher passe par un style Reanimated.
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 export function IconButton({ icon, accessibilityLabel, onPress, badge, variant = 'plain', color, disabled, style, testID }: IconButtonProps) {
   const t = useTheme();
+  // État « pressé » tenu en React : le style fonction ({ pressed }) ne se combine pas avec un style animé.
+  const [pressed, setPressed] = useState(false);
+  const press = usePressScale(0.9);
   const label = badge ? `${accessibilityLabel}, ${badge} non lu${badge > 1 ? 's' : ''}` : accessibilityLabel;
   return (
-    <Pressable
+    <AnimatedPressable
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
+      onPressIn={() => {
+        setPressed(true);
+        press.pressIn();
+      }}
+      onPressOut={() => {
+        setPressed(false);
+        press.pressOut();
+      }}
+      style={[
         styles.base,
         {
           borderRadius: t.radius.full,
-          backgroundColor: variant === 'filled' ? t.colors.background.subtle : pressed ? t.colors.background.subtle : 'transparent',
+          backgroundColor: variant === 'filled' ? t.colors.background.subtle : pressed && !disabled ? t.colors.background.subtle : 'transparent',
           opacity: disabled ? 0.5 : 1,
         },
         style,
+        press.style,
       ]}
     >
       <Icon icon={icon} color={color ?? t.colors.text.primary} />
@@ -44,7 +62,7 @@ export function IconButton({ icon, accessibilityLabel, onPress, badge, variant =
           <Badge count={badge} tone="urgent" />
         </View>
       ) : null}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

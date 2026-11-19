@@ -25,7 +25,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, a
     <View
       accessibilityRole="tablist"
       accessibilityLabel={accessibilityLabel}
-      style={[styles.wrap, { backgroundColor: t.colors.background.subtle, borderRadius: t.radius.md, padding: t.spacing.xs }]}
+      style={[styles.wrap, { backgroundColor: t.colors.background.surface, borderColor: t.colors.border.subtle, borderWidth: 1, borderRadius: t.radius.full, padding: t.spacing.xs }]}
     >
       {options.map((o) => {
         const selected = o.value === value;
@@ -43,13 +43,12 @@ export function SegmentedControl<T extends string>({ options, value, onChange, a
               styles.item,
               {
                 minHeight: MIN_TOUCH - 8,
-                borderRadius: t.radius.sm,
-                backgroundColor: selected ? t.colors.background.surface : 'transparent',
+                borderRadius: t.radius.full,
+                backgroundColor: selected ? t.colors.brand.primary : 'transparent',
               },
-              selected && t.elevation(1),
             ]}
           >
-            <Text variant="label" tone={selected ? 'primary' : 'secondary'}>
+            <Text variant="label" color={selected ? t.colors.brand.onPrimary : t.colors.text.secondary}>
               {o.label}
             </Text>
             {o.badge ? <Badge count={o.badge} tone="urgent" /> : null}

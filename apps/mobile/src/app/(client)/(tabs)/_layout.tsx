@@ -1,31 +1,20 @@
 import { SpaceNativeTabs, type NativeTabDef } from '@/components/SpaceNativeTabs';
+import { CLIENT_TABS, type ClientTab } from '@/lib/clientTabs';
+
+/** Icônes système de chaque onglet (SF Symbols iOS, Material Symbols Android). */
+const ICONS: Record<ClientTab['name'], Pick<NativeTabDef, 'sf' | 'md'>> = {
+  accueil: { sf: { default: 'house', selected: 'house.fill' }, md: 'home' },
+  activite: { sf: { default: 'calendar', selected: 'calendar' }, md: 'calendar_month' },
+  interventions: { sf: { default: 'wrench.and.screwdriver', selected: 'wrench.and.screwdriver.fill' }, md: 'build' },
+  messages: { sf: { default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' }, md: 'forum' },
+  profil: { sf: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' }, md: 'account_circle' },
+};
 
 /**
  * Onglets client (iOS / Android) : tab bar système — Liquid Glass sur iOS 26, Material sur Android.
- * Web : `_layout.web.tsx` (tab bar JS). Chaque onglet garde sa pile (`TabStack`).
+ * Web : `_layout.web.tsx` (tab bar JS). Chaque onglet garde sa pile (`TabStack`). Ordre et libellés : `lib/clientTabs.ts`.
  */
-const TABS: NativeTabDef[] = [
-  { name: 'accueil', label: 'Accueil', sf: { default: 'house', selected: 'house.fill' }, md: 'home', testID: 'tab-accueil' },
-  // Pas de role="search" : voir README (Liquid Glass) — l'écran a sa propre recherche + filtres.
-  { name: 'recherche', label: 'Recherche', sf: { default: 'magnifyingglass', selected: 'magnifyingglass' }, md: 'search', testID: 'tab-recherche' },
-  {
-    name: 'activite',
-    label: 'Activité',
-    sf: { default: 'list.bullet.rectangle', selected: 'list.bullet.rectangle.fill' },
-    md: 'list_alt',
-    testID: 'tab-activite',
-    badge: 'activity',
-  },
-  {
-    name: 'messages',
-    label: 'Messages',
-    sf: { default: 'bubble.left.and.bubble.right', selected: 'bubble.left.and.bubble.right.fill' },
-    md: 'forum',
-    testID: 'tab-messages',
-    badge: 'messages',
-  },
-  { name: 'profil', label: 'Profil', sf: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' }, md: 'account_circle', testID: 'tab-profil' },
-];
+const TABS: NativeTabDef[] = CLIENT_TABS.map((tab) => ({ ...tab, ...ICONS[tab.name] }));
 
 export default function ClientTabsLayout() {
   return <SpaceNativeTabs as="client" tabs={TABS} />;

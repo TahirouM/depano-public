@@ -1,5 +1,5 @@
 import { DOMAIN_LABELS, RULES } from '@depano/schemas';
-import { Avatar, Button, Card, ConfirmSheet, EmptyState, ErrorState, Screen, Skeleton, Text, formatDateTime, useTheme, useToast } from '@depano/ui';
+import { Avatar, Button, Card, ConfirmSheet, EmptyState, ErrorState, Screen, Skeleton, Text, formatDateTime, haptic, useTheme, useToast } from '@depano/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack, useNavigation } from 'expo-router';
 import { CalendarClock, CircleX, SearchX } from 'lucide-react-native';
@@ -34,6 +34,17 @@ export function UrgentSearchScreen({ bookingId }: { bookingId: string }) {
     const id = setTimeout(() => void askPermission('notifications', "Pour suivre l'arrivée de l'artisan"), 1200);
     return () => clearTimeout(id);
   }, []);
+
+  // Retour tactile « succès » une seule fois, au passage recherche → artisan trouvé
+  // (pas au premier chargement si la demande était déjà acceptée).
+  const prevStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const status = b?.status;
+    if (!status) return;
+    const found = status === 'accepted' || status === 'en_route';
+    if (prevStatus.current && (prevStatus.current === 'searching' || prevStatus.current === 'pending_payment') && found) haptic('success');
+    prevStatus.current = status;
+  }, [b?.status]);
 
   // Un artisan a accepté : on passe au suivi en direct.
   const navigation = useNavigation();

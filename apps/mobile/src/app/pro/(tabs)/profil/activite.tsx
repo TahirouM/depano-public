@@ -1,5 +1,7 @@
+import { useLocalSearchParams } from 'expo-router';
 import { ActivityScreen } from '@/features/artisan/account/ActivityScreen';
 
 export default function Screen() {
-  return <ActivityScreen />;
+  const { onglet } = useLocalSearchParams<{ onglet?: string }>();
+  return <ActivityScreen initialTab={onglet === 'avis' ? 'reviews' : undefined} />;
 }

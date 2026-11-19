@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   RULES,
   artisanCanSeeExactAddress,
+  chatIsOpen,
   type Actor,
   type BookingDetailDto,
   type BookingEventDto,
@@ -9,6 +10,7 @@ import {
   type BookingSummaryDto,
   type DisputeDto,
   type DomainCode,
+  type NotFeasibleReason,
   type QuoteDto,
   type ReportDto,
   type ScheduledType,
@@ -40,7 +42,7 @@ import { ChatService } from '../chat/chat.service';
 import { ReviewsService } from '../catalog/reviews.service';
 import { CompletionCodeService } from './completion-code.service';
 import type { BookingRow } from './booking-state.service';
-import { allowedTransitionsFor, approx, canReview, clientCancellationTerms, maskPhone, type Viewer } from './booking-rules';
+import { allowedTransitionsFor, approx, canReview, clientCancellationTerms, maskPhone, requestDeadline, type Viewer } from './booking-rules';
 
 const CODE_VISIBLE: BookingStatus[] = ['accepted', 'en_route', 'arrived', 'quote_pending', 'in_progress', 'awaiting_code'];
 
@@ -60,7 +62,8 @@ export class BookingMapper {
     const db = this.conn.db;
     const serviceIds = [...new Set(rows.map((r) => r.serviceId).filter((x): x is string => !!x))];
     const artisanIds = [...new Set(rows.map((r) => r.artisanId).filter((x): x is string => !!x))];
-    const [svc, addr, arts, clients, convs] = await Promise.all([
+    const requestedIds = rows.filter((r) => r.status === 'requested').map((r) => r.id);
+    const [svc, addr, arts, clients, convs, requestedEvents] = await Promise.all([
       serviceIds.length ? db.select({ id: services.id, name: services.name }).from(services).where(inArray(services.id, serviceIds)) : [],
       db.select({ id: addresses.id, city: addresses.city }).from(addresses).where(inArray(addresses.id, [...new Set(rows.map((r) => r.addressId))])),
       artisanIds.length
@@ -72,7 +75,15 @@ export class BookingMapper {
         : [],
       db.select({ id: users.id, first: users.firstName, avatar: users.avatarFileId }).from(users).where(inArray(users.id, [...new Set(rows.map((r) => r.clientId))])),
       db.select().from(conversations).where(inArray(conversations.bookingId, rows.map((r) => r.id))),
+      requestedIds.length
+        ? db
+            .select({ bookingId: bookingEvents.bookingId, at: sql<Date>`max(${bookingEvents.createdAt})`.mapWith(bookingEvents.createdAt) })
+            .from(bookingEvents)
+            .where(and(inArray(bookingEvents.bookingId, requestedIds), eq(bookingEvents.toStatus, 'requested')))
+            .groupBy(bookingEvents.bookingId)
+        : [],
     ]);
+    const requestedAt = new Map(requestedEvents.map((e) => [e.bookingId, e.at]));
     const svcMap = new Map(svc.map((s) => [s.id, s.name]));
     const addrMap = new Map(addr.map((a) => [a.id, a.city]));
     const artMap = new Map(arts.map((a) => [a.id, a]));
@@ -88,7 +99,8 @@ export class BookingMapper {
           const a = artMap.get(b.artisanId);
           counterpart = a ? { id: a.id, name: a.name, avatarUrl: await this.filesService.signedUrl(a.avatar) } : null;
         }
-        const conv = convMap.get(b.id);
+        // Messagerie fermée tant que l'artisan n'a pas accepté la demande.
+        const conv = chatIsOpen({ status: b.status as BookingStatus, artisanAcceptedAt: b.artisanAcceptedAt }) ? convMap.get(b.id) : undefined;
         return {
           id: b.id,
           reference: b.reference,
@@ -103,9 +115,22 @@ export class BookingMapper {
           city: addrMap.get(b.addressId) ?? '',
           counterpart,
           unreadMessages: conv && viewer.actor !== 'support' ? await this.chat.unreadCount(conv, viewer.userId) : 0,
+          priceOnRequest: b.priceOnRequest,
+          artisanAccepted: !!b.artisanAcceptedAt,
+          rescheduledFromId: b.rescheduledFromId,
+          artisanNote: viewer.actor === 'artisan' ? b.artisanNote : null,
+          endsAt: b.endsAt?.toISOString() ?? null,
+          requestExpiresAt: this.requestExpiresAt(b, requestedAt.get(b.id))?.toISOString() ?? null,
         };
       }),
     );
+  }
+
+  /** Échéance de réponse : de l'artisan (demande), du client (prix ou report proposé). */
+  private requestExpiresAt(b: BookingRow, requestedAt: Date | undefined): Date | null {
+    if (b.status === 'requested') return requestDeadline(b, requestedAt ?? b.createdAt);
+    if (b.status === 'pending_payment' && b.artisanAcceptedAt) return requestDeadline(b, b.artisanAcceptedAt);
+    return null;
   }
 
   async toDetail(b: BookingRow, viewer: Viewer): Promise<BookingDetailDto> {
@@ -126,7 +151,7 @@ export class BookingMapper {
     const [report] = await db.select().from(interventionReports).where(eq(interventionReports.bookingId, b.id));
     const review = await this.reviewsService.forBooking(b.id);
     const [dispute] = await db.select().from(disputes).where(eq(disputes.bookingId, b.id));
-    const conv = await this.chat.conversationForBooking(b.id);
+    const conv = chatIsOpen({ status: b.status as BookingStatus, artisanAcceptedAt: b.artisanAcceptedAt }) ? await this.chat.conversationForBooking(b.id) : null;
     const [invoice] = await db
       .select({ id: invoices.id })
       .from(invoices)
@@ -169,7 +194,16 @@ export class BookingMapper {
       : null;
     const disputeDto: DisputeDto | null = dispute ? toDisputeDto(dispute) : null;
     const etaMinutes = b.status === 'en_route' && b.etaAt ? Math.max(0, Math.round((b.etaAt.getTime() - Date.now()) / 60_000)) : null;
-    const totalBase = b.basePriceCents + b.travelFeeCents + b.urgentFeeCents + b.guaranteeCents;
+    const totalBase = b.basePriceCents + b.travelFeeCents + b.urgentFeeCents + b.guaranteeCents - b.discountCents;
+    const notFeasible: BookingDetailDto['notFeasible'] =
+      report && !report.feasible && report.notFeasibleReason
+        ? {
+            reason: report.notFeasibleReason as NotFeasibleReason,
+            comment: report.notes,
+            photoUrls: await this.filesService.signedUrls(report.beforeFileIds),
+            rescheduledBookingId: report.rescheduledBookingId,
+          }
+        : null;
 
     return {
       ...summary!,
@@ -193,6 +227,7 @@ export class BookingMapper {
         urgentFeeCents: b.urgentFeeCents,
         guaranteeCents: b.guaranteeCents,
         travelFeeCents: b.travelFeeCents,
+        discountCents: b.discountCents,
         totalCents: totalBase,
         rangeMinCents: totalBase,
         rangeMaxCents: Math.round(totalBase * (1 + RULES.quoteOverrunThreshold)),
@@ -233,6 +268,7 @@ export class BookingMapper {
       dispute: disputeDto,
       conversationId: conv?.id ?? null,
       invoiceId: invoice?.id ?? null,
+      notFeasible,
       dispatch,
       allowedTransitions: allowedTransitionsFor(b, viewer.actor as Actor),
       canReview: canReview(b, viewer, !!review),

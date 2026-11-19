@@ -12,6 +12,7 @@ import { router, Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { View } from 'react-native';
 import { api, errorMessage } from '@/lib/api';
+import { features } from '@/lib/env';
 import { qk } from '@/lib/query/keys';
 import { useDraft } from '@/stores/drafts';
 import { DEFAULT_RULES, rulesError, WeekRulesEditor } from '../components/WeekRulesEditor';
@@ -94,8 +95,10 @@ export function ZoneStep() {
         />
         <SectionHeader title="Horaires types" />
         <Text variant="callout" tone="secondary">
-          Les clients réservent des rendez-vous dans ces plages. Les urgences, elles, dépendent de
-          l'interrupteur « Disponible ».
+          Les clients réservent des rendez-vous dans ces plages.
+          {features.urgent
+            ? " Les urgences, elles, dépendent de l'interrupteur « Disponible »."
+            : ''}
         </Text>
         <WeekRulesEditor rules={rules} onChange={(r) => patch({ rules: r })} />
         {rErr ? (

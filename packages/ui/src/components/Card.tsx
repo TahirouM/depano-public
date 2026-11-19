@@ -6,7 +6,7 @@ import type { SpacingToken } from '../tokens/scale';
 export interface CardProps {
   children: ReactNode;
   onPress?: () => void;
-  /** surface (blanc, élévation 1), brand (beige), outline (bordure fine), flat. */
+  /** surface (blanc, bordure fine + ombre douce), brand (beige pêche), outline (bordure fine), flat. */
   variant?: 'surface' | 'brand' | 'outline' | 'flat';
   padding?: SpacingToken;
   accessibilityLabel?: string;
@@ -23,7 +23,8 @@ export function Card({ children, onPress, variant = 'surface', padding = 'lg', a
     backgroundColor:
       variant === 'brand' ? t.colors.background.brand : variant === 'flat' ? t.colors.background.subtle : t.colors.background.surface,
     ...(variant === 'surface' ? t.elevation(1) : null),
-    ...(variant === 'outline' ? { borderWidth: 1, borderColor: t.colors.border.subtle } : null),
+    ...(variant === 'surface' || variant === 'outline' ? { borderWidth: 1, borderColor: t.colors.border.subtle } : null),
+    ...(variant === 'brand' ? { borderWidth: 1, borderColor: t.colors.brand.outline } : null),
   };
   if (!onPress) {
     return (

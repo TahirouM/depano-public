@@ -1,4 +1,4 @@
-import { DISPUTE_REASON_LABELS, DOMAIN_LABELS, formatEuros } from '@depano/schemas';
+import { DISPUTE_REASON_LABELS, DOMAIN_LABELS, NOT_FEASIBLE_REASON_LABELS, formatEuros } from '@depano/schemas';
 import {
   Button,
   Card,
@@ -7,7 +7,6 @@ import {
   Icon,
   ListItem,
   PriceRow,
-  PriceSummary,
   Screen,
   SectionHeader,
   Skeleton,
@@ -21,22 +20,30 @@ import {
   useToast,
 } from '@depano/ui';
 import { router, Stack } from 'expo-router';
-import { CalendarClock, FileText, MapPin, Navigation, Receipt, Scale, Star, TriangleAlert } from 'lucide-react-native';
+import { CalendarClock, CalendarX, FileText, Hourglass, MapPin, Navigation, Receipt, Scale, Star, TriangleAlert } from 'lucide-react-native';
 import { useState } from 'react';
 import { Image, ScrollView, View } from 'react-native';
 import { AuthGate } from '@/components/AuthGate';
 import { errorMessage } from '@/lib/api';
+import { features } from '@/lib/env';
 import { useBookingLive } from '@/lib/realtime/hooks';
 import { ArtisanContact } from '../components/ArtisanContact';
+import { BookingPriceSummary } from '../components/BookingPriceSummary';
 import { CancelSheet } from '../components/CancelSheet';
 import { CompletionCode } from '../components/CompletionCode';
 import { DisputeSheet } from '../components/DisputeSheet';
 import { addressLabel, prefillUrgentDraft } from '../drafts';
 import { openDocument } from '../openFile';
 import { useInvoices } from '../queries';
-import { buildTimeline } from './timeline';
+import { PRICE_ON_REQUEST_LABEL } from '../rdv/useRdv';
+import { awaitingPrice, proposalOf, requestDeadline } from './bookingState';
+import { ProposalActions } from './ProposalActions';
+import { NOT_FEASIBLE_LABEL, buildTimeline } from './timeline';
 
-/** Détail d'une intervention (client) : statut en direct, timeline, artisan, prix, code, devis, actions. */
+/**
+ * Détail d'une intervention (client) : statut en direct, timeline, artisan, prix, code, devis, actions ;
+ * demande en attente de l'artisan, proposition à accepter (prix, nouveau RDV), intervention non réalisable.
+ */
 export function InterventionDetailScreen({ id }: { id: string }) {
   return (
     <AuthGate title="Intervention" message="Connectez-vous pour suivre cette intervention.">
@@ -132,6 +139,45 @@ function DetailInner({ id }: { id: string }) {
           </Text>
         </View>
 
+        {b.status === 'requested' ? (
+          <Banner
+            tone="info"
+            icon={Hourglass}
+            title="En attente de l'artisan"
+            message={
+              awaitingPrice(b)
+                ? `L'artisan va étudier votre demande et vous proposer un prix ; vous pourrez l'accepter ou non. Réponse au plus tard le ${formatDateTime(requestDeadline(b))}.`
+                : `${b.artisan?.displayName ?? "L'artisan"} doit accepter votre demande au plus tard le ${formatDateTime(requestDeadline(b))}. Vous êtes prévenu dès sa réponse.`
+            }
+          />
+        ) : null}
+        {proposalOf(b) ? (
+          <Card variant="outline" style={{ gap: t.spacing.sm }} testID="proposal">
+            <ProposalActions booking={b} />
+          </Card>
+        ) : null}
+        {b.notFeasible ? (
+          <Banner
+            tone="warning"
+            icon={TriangleAlert}
+            title={NOT_FEASIBLE_LABEL}
+            message={[`Motif : ${NOT_FEASIBLE_REASON_LABELS[b.notFeasible.reason]}`, b.notFeasible.comment].filter(Boolean).join('. ')}
+            action={
+              b.notFeasible.rescheduledBookingId
+                ? { label: 'Voir le nouveau rendez-vous proposé', onPress: () => router.push({ pathname: '/activite/[id]', params: { id: b.notFeasible!.rescheduledBookingId! } }), testID: 'open-rescheduled' }
+                : undefined
+            }
+          />
+        ) : null}
+        {b.status === 'expired' && b.kind === 'scheduled' ? (
+          <Banner
+            tone="warning"
+            icon={CalendarX}
+            title="L'artisan n'a pas répondu à temps"
+            message="Votre demande a expiré. Rien ne vous a été prélevé."
+            action={{ label: 'Reprendre rendez-vous', onPress: () => router.push('/recherche') }}
+          />
+        ) : null}
         {b.status === 'quote_pending' && quote ? (
           <Banner
             tone="warning"
@@ -151,7 +197,12 @@ function DetailInner({ id }: { id: string }) {
           />
         ) : null}
         {b.status === 'searching' ? (
-          <Banner tone="info" icon={Navigation} title="Recherche d’un artisan en cours" action={{ label: 'Suivre la recherche', onPress: () => router.push({ pathname: '/urgence/[bookingId]/recherche', params: { bookingId: b.id } }) }} />
+          <Banner
+            tone="info"
+            icon={Navigation}
+            title="Recherche d’un artisan en cours"
+            action={features.urgent ? { label: 'Suivre la recherche', onPress: () => router.push({ pathname: '/urgence/[bookingId]/recherche', params: { bookingId: b.id } }) } : undefined}
+          />
         ) : null}
         {b.status === 'en_route' || (b.status === 'accepted' && b.kind === 'urgent') ? (
           <Banner
@@ -175,7 +226,7 @@ function DetailInner({ id }: { id: string }) {
             icon={TriangleAlert}
             title="L'artisan a annulé"
             message="Ce n'est pas de votre faute. Rien ne vous a été prélevé."
-            action={b.kind === 'urgent' ? { label: 'Relancer une urgence', onPress: () => { prefillUrgentDraft(b); router.push('/urgence/paiement'); } } : { label: 'Reprendre rendez-vous', onPress: () => router.push('/recherche') }}
+            action={features.urgent && b.kind === 'urgent' ? { label: 'Relancer une urgence', onPress: () => { prefillUrgentDraft(b); router.push('/urgence/paiement'); } } : { label: 'Reprendre rendez-vous', onPress: () => router.push('/recherche') }}
           />
         ) : null}
 
@@ -213,8 +264,16 @@ function DetailInner({ id }: { id: string }) {
                 <Divider />
                 <PriceRow label="Total TTC (devis validé)" cents={quote.totalCents} total />
               </View>
+            ) : awaitingPrice(b) ? (
+              <View style={{ gap: t.spacing.sm }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: t.spacing.md }}>
+                  <Text style={{ flex: 1 }}>Prestation</Text>
+                  <Text variant="bodyStrong">{PRICE_ON_REQUEST_LABEL}</Text>
+                </View>
+                {b.price.travelFeeCents > 0 ? <PriceRow label="Déplacement" cents={b.price.travelFeeCents} /> : null}
+              </View>
             ) : (
-              <PriceSummary price={b.price} showRange={b.kind === 'urgent' && !['closed', 'cancelled_by_client', 'cancelled_by_artisan', 'expired'].includes(b.status)} />
+              <BookingPriceSummary price={b.price} showRange={b.kind === 'urgent' && !['closed', 'cancelled_by_client', 'cancelled_by_artisan', 'expired'].includes(b.status)} />
             )}
             {b.capturedCents != null ? (
               <Text variant="callout" tone="success">
@@ -224,7 +283,7 @@ function DetailInner({ id }: { id: string }) {
               <Text variant="callout" tone="secondary">
                 Frais d'annulation : {formatEuros(b.cancellationFeeCents)}
               </Text>
-            ) : !['closed', 'cancelled_by_client', 'cancelled_by_artisan', 'expired'].includes(b.status) ? (
+            ) : !['closed', 'cancelled_by_client', 'cancelled_by_artisan', 'expired', 'pending_payment'].includes(b.status) && !awaitingPrice(b) ? (
               <Text variant="callout" tone="secondary">
                 Empreinte : {formatEuros(b.authorizedCents || finalCents)}. Vous ne payez qu'à la fin, quand vous donnez le code.
               </Text>

@@ -9,6 +9,11 @@ import { ApiError, createApiClient } from '@depano/schemas';
  */
 const PLACEHOLDER_BASE = 'http://depano.invalid';
 
+/** Démo en ligne (NEXT_PUBLIC_DEMO=1) : réponses enregistrées, rejouées dans le navigateur. */
+const demoFetch: typeof fetch | undefined =
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  process.env.NEXT_PUBLIC_DEMO === '1' ? require('./demo/backend').demoFetch : undefined;
+
 let redirecting = false;
 
 async function onSessionExpired() {
@@ -27,6 +32,7 @@ export const api = createApiClient({
   getAccessToken: () => null,
   onUnauthorized: onSessionExpired,
   fetch: (input, init) => {
+    if (demoFetch) return demoFetch(input, init);
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
     const path = url.pathname.replace(/^\/v1\//, '/api/proxy/');
     return fetch(`${path}${url.search}`, { ...init, credentials: 'same-origin', cache: 'no-store' });

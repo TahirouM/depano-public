@@ -87,7 +87,7 @@ const TABLES = `audit_logs, files, notifications, messages, conversations, invoi
   payments, reviews, disputes, intervention_reports, quote_lines, quotes, dispatch_offers, booking_locations,
   booking_events, bookings, favorites, addresses, availability_exceptions, availability_rules, artisan_documents,
   artisan_services, artisan_profiles, services, domains, zones, consents, push_tokens, passkeys, sessions,
-  otp_codes, client_profiles, users`;
+  otp_codes, referral_credits, client_profiles, users`;
 
 export async function resetState(ctx: TestContext) {
   await ctx.db.execute(sql.raw(`TRUNCATE TABLE ${TABLES} CASCADE`));

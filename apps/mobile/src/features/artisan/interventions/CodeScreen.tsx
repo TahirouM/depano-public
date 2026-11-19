@@ -15,12 +15,13 @@ import {
   PriceRow,
   Screen,
   SkeletonText,
+  SuccessCheck,
   Text,
   useTheme,
 } from '@depano/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
-import { CircleCheck, KeyRound, Lock } from 'lucide-react-native';
+import { KeyRound, Lock } from 'lucide-react-native';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { QueryView } from '@/components/QueryView';
@@ -49,11 +50,14 @@ function CodeForm({ b }: { b: BookingDetailDto }) {
   const [error, setError] = useState<string | null>(null);
   const [left, setLeft] = useState(b.completionAttemptsLeft);
   const [locked, setLocked] = useState(b.completionAttemptsLeft <= 0);
+  // Code validé dans cette session : posé avant la mise à jour du cache (statut « closed »).
+  const [justClosed, setJustClosed] = useState(false);
 
   const complete = useMutation({
     mutationFn: (c: string) => api.bookings.complete(b.id, { code: c }),
     onSuccess: (nb) => {
-      haptic('success');
+      // Le retour haptique de succès est porté par l'animation de l'écran de clôture.
+      setJustClosed(true);
       setBookingDetail(qc, nb);
       void qc.invalidateQueries({ queryKey: qk.artisan.earnings });
       void qc.invalidateQueries({ queryKey: qk.artisan.stats });
@@ -71,7 +75,8 @@ function CodeForm({ b }: { b: BookingDetailDto }) {
     },
   });
 
-  if (b.status === 'closed') return <Success b={b} />;
+  // Vibration de succès seulement si le code vient d'être validé ici (pas à la réouverture).
+  if (b.status === 'closed') return <Success b={b} celebrate={justClosed} />;
 
   if (locked) {
     return (
@@ -173,7 +178,7 @@ function CodeForm({ b }: { b: BookingDetailDto }) {
   );
 }
 
-function Success({ b }: { b: BookingDetailDto }) {
+function Success({ b, celebrate }: { b: BookingDetailDto; celebrate: boolean }) {
   const t = useTheme();
   const qc = useQueryClient();
   const next = () => {
@@ -195,7 +200,12 @@ function Success({ b }: { b: BookingDetailDto }) {
         style={{ gap: t.spacing.lg, alignItems: 'center', paddingTop: t.spacing.xl }}
         testID="code-success"
       >
-        <CircleCheck size={72} color={t.colors.tone.success.solid} />
+        <SuccessCheck
+          size={72}
+          haptic={celebrate}
+          accessibilityLabel="Code validé, intervention clôturée"
+          testID="code-success-check"
+        />
         <Text
           variant="title1"
           align="center"
@@ -208,8 +218,7 @@ function Success({ b }: { b: BookingDetailDto }) {
           Paiement capturé. Le virement arrive sous 2 à 3 jours ouvrés.
         </Text>
         <Card variant="brand" style={{ alignSelf: 'stretch', gap: t.spacing.sm }}>
-          <PriceRow label="Encaissé" cents={b.capturedCents ?? 0} />
-          <PriceRow label="Commission DEPANO" cents={-(b.commissionCents ?? 0)} />
+          {/* Montant net uniquement : la commission n'est pas détaillée à l'artisan (taux dans l'Aide). */}
           <PriceRow label="Net pour vous" cents={net} total />
         </Card>
         <Text variant="caption" tone="secondary">

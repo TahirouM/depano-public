@@ -2,7 +2,7 @@ import { SpaceNativeTabs, type NativeTabDef } from '@/components/SpaceNativeTabs
 
 /**
  * Onglets artisan (iOS / Android) : tab bar système — Liquid Glass sur iOS 26, Material sur Android.
- * Web : `_layout.web.tsx` (tab bar JS). Accent ardoise via `AccentScope` (pro/_layout.tsx).
+ * Web : `_layout.web.tsx` (tab bar JS).
  */
 const TABS: NativeTabDef[] = [
   { name: 'accueil', label: 'Accueil', sf: { default: 'house', selected: 'house.fill' }, md: 'home', testID: 'tab-pro-accueil' },

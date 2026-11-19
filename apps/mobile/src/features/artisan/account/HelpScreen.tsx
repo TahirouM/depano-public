@@ -4,12 +4,21 @@ import { router, Stack } from 'expo-router';
 import { ChevronDown, ChevronUp, FileText, Mail, Phone, Scale } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
+import { features } from '@/lib/env';
+
+/** Taux affiché aux artisans : seul endroit de l'espace pro où il apparaît (offre commerciale susceptible d'évoluer). */
+const COMMISSION_PCT = Math.round(RULES.defaultCommissionRate * 100);
 
 const FAQ: { q: string; a: string }[] = [
-  {
-    q: 'Comment recevoir des urgences ?',
-    a: `Activez « Disponible pour urgences » sur l'accueil. Chaque demande proche s'ouvre en plein écran : vous avez ${RULES.dispatch.offerTimeoutSeconds} secondes pour accepter. Le premier artisan qui accepte obtient l'intervention.`,
-  },
+  features.urgent
+    ? {
+        q: 'Comment recevoir des urgences ?',
+        a: `Activez « Disponible pour urgences » sur l'accueil. Chaque demande proche s'ouvre en plein écran : vous avez ${RULES.dispatch.offerTimeoutSeconds} secondes pour accepter. Le premier artisan qui accepte obtient l'intervention.`,
+      }
+    : {
+        q: 'Comment recevoir des demandes ?',
+        a: "Publiez vos horaires types (Profil > Disponibilités) et vos tarifs : les clients de votre zone réservent vos créneaux libres. Chaque demande arrive sur l'accueil, à accepter ou refuser.",
+      },
   {
     q: 'Le devis est-il obligatoire ?',
     a: "Oui, dès le premier euro (arrêté du 24 janvier 2017). Faites-le dans l'app une fois sur place : le client le valide sur son téléphone avant que vous commenciez. Au-delà de +20 % du montant autorisé, le client valide un complément de paiement.",
@@ -20,7 +29,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Quelle commission prend DEPANO ?',
-    a: `${Math.round(RULES.defaultCommissionRate * 100)} % du montant encaissé, prélevés automatiquement. Jamais de commission sur les frais de déplacement seuls.`,
+    a: `${COMMISSION_PCT} % du montant encaissé, prélevés automatiquement au moment du paiement. Jamais de commission sur les frais de déplacement seuls. Ce taux correspond à l'offre en vigueur : vous êtes prévenu avant tout changement.`,
   },
   {
     q: 'Le client est absent ou refuse le devis',
@@ -28,7 +37,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'Puis-je annuler une intervention ?',
-    a: `Oui, mais le client est alors reprogrammé en priorité et votre fiabilité baisse : ${RULES.artisanReliability.maxCancellationsIn30Days} annulations en 30 jours suspendent la réception des urgences.`,
+    a: `Oui, mais le client est alors reprogrammé en priorité et votre fiabilité baisse : ${RULES.artisanReliability.maxCancellationsIn30Days} annulations en 30 jours suspendent la réception ${features.urgent ? 'des urgences' : 'de nouvelles demandes'}.`,
   },
   {
     q: 'Mon assurance arrive à échéance',

@@ -1,0 +1,35 @@
+# Infrastructure du serveur de test (VPS) : Postgres+PostGIS, Redis, stockage S3 (SeaweedFS).
+# Ports liés à 127.0.0.1 uniquement : l'API, le worker et Caddy y accèdent en local.
+name: depano
+services:
+  postgres:
+    image: imresamu/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: depano
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: depano
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U depano"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: [redisdata:/data]
+  s3:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command: server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data
+    ports: ["127.0.0.1:9000:8333"]
+    volumes:
+      - s3data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+volumes:
+  pgdata:
+  redisdata:
+  s3data:

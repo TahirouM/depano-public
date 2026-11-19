@@ -22,6 +22,8 @@ export function createRealtimeHandlers(qc: QueryClient, hooks: { onOffer?: (offe
       void qc.invalidateQueries({ queryKey: qk.bookings.lists });
       void qc.invalidateQueries({ queryKey: qk.badges });
       void qc.invalidateQueries({ queryKey: qk.artisan.dashboard });
+      // Acceptation par l'artisan : la messagerie de l'intervention s'ouvre.
+      void qc.invalidateQueries({ queryKey: qk.chat.conversations });
     },
     'booking.location': (e) => {
       patchBooking(e.bookingId, { artisanLocation: { lat: e.lat, lng: e.lng }, etaMinutes: e.etaMinutes });
@@ -53,6 +55,7 @@ export function createRealtimeHandlers(qc: QueryClient, hooks: { onOffer?: (offe
     'notification.created': (n) => {
       prependNotificationInCache(qc, n);
       void qc.invalidateQueries({ queryKey: qk.badges });
+      if (n.type === 'referral_reward') void qc.invalidateQueries({ queryKey: qk.referral });
     },
     'offer.created': (o) => {
       void qc.invalidateQueries({ queryKey: qk.artisan.offers });

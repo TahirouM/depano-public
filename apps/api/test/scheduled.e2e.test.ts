@@ -30,6 +30,16 @@ describe('Rendez-vous planifiés, créneaux et annulation', () => {
     return r.body[0].slots[0] as string;
   }
 
+  /** Empreinte validée (demande envoyée) puis acceptation par l'artisan 1. */
+  async function confirmAndAccept(id: string, token = clientA) {
+    const c = await call(ctx, 'POST', `/bookings/${id}/confirm-payment`, { token });
+    expect(c.body.status).toBe('requested');
+    const r = await call(ctx, 'POST', `/bookings/${id}/respond`, { token: await tokenOf(ctx, PHONES.artisan1), body: { accept: true } });
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('accepted');
+    return (await call(ctx, 'GET', `/bookings/${id}`, { token })).body;
+  }
+
   async function book(token: string, scheduledAt: string, extra: Record<string, unknown> = {}) {
     return call(ctx, 'POST', '/bookings', {
       token,
@@ -54,10 +64,15 @@ describe('Rendez-vous planifiés, créneaux et annulation', () => {
     const at = await slotIn(2);
     const first = await book(clientA, at);
     expect(first.status).toBe(201);
-    expect(first.body.booking.conversationId).toBeTruthy();
-    const confirmed = await call(ctx, 'POST', `/bookings/${first.body.booking.id}/confirm-payment`, { token: clientA });
-    expect(confirmed.body.status).toBe('accepted');
-    expect(confirmed.body.completionCode).toMatch(/^\d{4}$/);
+    // Messagerie fermée tant que l'artisan n'a pas accepté la demande.
+    expect(first.body.booking.conversationId).toBeNull();
+    const requested = await call(ctx, 'POST', `/bookings/${first.body.booking.id}/confirm-payment`, { token: clientA });
+    expect(requested.body.status).toBe('requested');
+    expect(requested.body.completionCode).toBeNull();
+    expect(ctx.jobs.find('bookings', 'reminder')).toHaveLength(0);
+    const confirmed = await confirmAndAccept(first.body.booking.id);
+    expect(confirmed.conversationId).toBeTruthy();
+    expect(confirmed.completionCode).toMatch(/^\d{4}$/);
     expect(ctx.jobs.find('bookings', 'reminder').map((j) => j.data.kind).sort()).toEqual(['day_before', 'hour_before']);
 
     const second = await book(clientB, at);
@@ -76,9 +91,8 @@ describe('Rendez-vous planifiés, créneaux et annulation', () => {
   it('litige refusé avant l’heure du RDV, possible ensuite', async () => {
     const r = await book(clientA, await slotIn(2));
     const id = r.body.booking.id as string;
-    const c = await call(ctx, 'POST', `/bookings/${id}/confirm-payment`, { token: clientA });
-    expect(c.body.status).toBe('accepted');
-    expect(c.body.allowedTransitions).not.toContain('disputed');
+    const c = await confirmAndAccept(id);
+    expect(c.allowedTransitions).not.toContain('disputed');
     const early = await call(ctx, 'POST', `/bookings/${id}/dispute`, { token: clientA, body: { reason: 'never_came' } });
     expect(early.status).toBe(409);
     expect(early.body.code).toBe('dispute_too_early');
@@ -96,18 +110,20 @@ describe('Rendez-vous planifiés, créneaux et annulation', () => {
     const r = await book(clientA, at);
     expect(r.body.payment.setupIntentId).toMatch(/^seti_fake_/);
     expect(r.body.payment.paymentIntentId).toBeNull();
-    const c = await call(ctx, 'POST', `/bookings/${r.body.booking.id}/confirm-payment`, { token: clientA });
-    expect(c.body.status).toBe('accepted');
-    expect(c.body.authorizedCents).toBe(0);
+    const c = await confirmAndAccept(r.body.booking.id);
+    expect(c.authorizedCents).toBe(0);
     const res = (await ctx.jobs.run('bookings', 'authorize-scheduled')) as any;
     expect(res.authorized).toBe(true);
     expect((await call(ctx, 'GET', `/bookings/${r.body.booking.id}`, { token: clientA })).body.authorizedCents).toBe(9000 + 2500);
   });
 
-  it('annulation gratuite plus de 2 h avant, frais de déplacement ensuite, gratuite avec garantie', async () => {
-    // > 2 h : gratuite
+  it("annulation gratuite pendant 1 h après la prise de RDV, frais de déplacement ensuite, gratuite avec garantie", async () => {
+    const bookedAgo = (id: string, minutesAgo: number) =>
+      ctx.db.update(s.bookings).set({ createdAt: new Date(Date.now() - minutesAgo * 60_000) }).where(eq(s.bookings.id, id));
+
+    // Moins d'1 h après la réservation : gratuite, même pour un RDV proche
     const free = await book(clientA, await slotIn(2));
-    await call(ctx, 'POST', `/bookings/${free.body.booking.id}/confirm-payment`, { token: clientA });
+    await confirmAndAccept(free.body.booking.id);
     const d1 = (await call(ctx, 'GET', `/bookings/${free.body.booking.id}`, { token: clientA })).body;
     expect(d1).toMatchObject({ cancellationIsFree: true, cancellationFeeCents: 0 });
     const c1 = await call(ctx, 'POST', `/bookings/${free.body.booking.id}/cancel`, { token: clientA, body: { reason: 'Imprévu' } });
@@ -115,12 +131,11 @@ describe('Rendez-vous planifiés, créneaux et annulation', () => {
     const p1 = await ctx.db.select().from(s.payments).where(eq(s.payments.bookingId, free.body.booking.id));
     expect(p1[0]!.status).toBe('cancelled');
 
-    // < 2 h : frais de déplacement capturés, sans commission
+    // Plus d'1 h après la réservation : frais de déplacement capturés, sans commission (même RDV lointain)
     const late = await book(clientA, await slotIn(3));
     const lateId = late.body.booking.id;
-    await call(ctx, 'POST', `/bookings/${lateId}/confirm-payment`, { token: clientA });
-    const soon = new Date(Date.now() + 60 * 60_000);
-    await ctx.db.update(s.bookings).set({ scheduledAt: soon, endsAt: new Date(soon.getTime() + 3600_000) }).where(eq(s.bookings.id, lateId));
+    await confirmAndAccept(lateId);
+    await bookedAgo(lateId, 61);
     const d2 = (await call(ctx, 'GET', `/bookings/${lateId}`, { token: clientA })).body;
     expect(d2).toMatchObject({ cancellationIsFree: false, cancellationFeeCents: 2500 });
     const c2 = await call(ctx, 'POST', `/bookings/${lateId}/cancel`, { token: clientA, body: {} });
@@ -131,11 +146,11 @@ describe('Rendez-vous planifiés, créneaux et annulation', () => {
     const p2 = await ctx.db.select().from(s.payments).where(eq(s.payments.bookingId, lateId));
     expect(p2[0]).toMatchObject({ status: 'partially_captured', capturedCents: 2500, applicationFeeCents: 0 });
 
-    // < 2 h avec garantie annulation : gratuite
+    // Plus d'1 h avec garantie annulation : gratuite
     const g = await book(clientA, await slotIn(4), { withGuarantee: true });
     expect(g.body.booking.price.guaranteeCents).toBe(1000);
-    await call(ctx, 'POST', `/bookings/${g.body.booking.id}/confirm-payment`, { token: clientA });
-    await ctx.db.update(s.bookings).set({ scheduledAt: soon, endsAt: new Date(soon.getTime() + 3600_000) }).where(eq(s.bookings.id, g.body.booking.id));
+    await confirmAndAccept(g.body.booking.id);
+    await bookedAgo(g.body.booking.id, 120);
     const c3 = await call(ctx, 'POST', `/bookings/${g.body.booking.id}/cancel`, { token: clientA, body: {} });
     expect(c3.body).toMatchObject({ status: 'cancelled_by_client', capturedCents: null, cancellationFeeCents: 0 });
   });
@@ -144,7 +159,7 @@ describe('Rendez-vous planifiés, créneaux et annulation', () => {
     const artisan = await tokenOf(ctx, PHONES.artisan1);
     for (let i = 0; i < 3; i++) {
       const b = await book(clientA, await slotIn(2 + i));
-      await call(ctx, 'POST', `/bookings/${b.body.booking.id}/confirm-payment`, { token: clientA });
+      await confirmAndAccept(b.body.booking.id);
       const c = await call(ctx, 'POST', `/bookings/${b.body.booking.id}/cancel`, { token: artisan, body: { reason: 'Malade' } });
       expect(c.body.status).toBe('cancelled_by_artisan');
     }

@@ -1,5 +1,5 @@
-import { ActivityScreen } from '@/features/client/activity/ActivityScreen';
+import { AppointmentsScreen } from '@/features/client/activity/AppointmentsScreen';
 
 export default function Screen() {
-  return <ActivityScreen />;
+  return <AppointmentsScreen />;
 }

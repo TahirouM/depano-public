@@ -42,9 +42,10 @@ export class FakePaymentProvider implements PaymentProvider {
 
   async getIntent(id: string) {
     const forced = this.intentOverrides.get(id);
-    if (forced) return { status: forced, amountCapturableCents: 0, paymentMethodId: null };
-    if (id.startsWith('seti_')) return { status: 'setup_succeeded' as const, amountCapturableCents: 0, paymentMethodId: 'pm_fake_visa' };
-    return { status: 'authorized' as const, amountCapturableCents: Number.MAX_SAFE_INTEGER, paymentMethodId: 'pm_fake_visa' };
+    const clientSecret = `${id}_secret_fake`;
+    if (forced) return { status: forced, amountCapturableCents: 0, paymentMethodId: null, clientSecret };
+    if (id.startsWith('seti_')) return { status: 'setup_succeeded' as const, amountCapturableCents: 0, paymentMethodId: 'pm_fake_visa', clientSecret };
+    return { status: 'authorized' as const, amountCapturableCents: Number.MAX_SAFE_INTEGER, paymentMethodId: 'pm_fake_visa', clientSecret };
   }
 
   async capture(id: string, input: { amountCents: number; applicationFeeCents: number }) {
@@ -83,6 +84,17 @@ export class FakePaymentProvider implements PaymentProvider {
 
   async listPayouts() {
     return [];
+  }
+
+  /** Abonnement factice : payé immédiatement, renouvelé par le job de maintenance « promotion-renew ». */
+  async createPromotionSubscription(input: { artisanId: string; priceCents: number }) {
+    const ref = `sub_fake_${short(`${input.artisanId}:${this.seq++}`)}`;
+    this.logger.log(`abonnement promotion ${ref} ${input.priceCents} c`);
+    return { ref, status: 'active' as const, paymentIntentId: null, clientSecret: null, currentPeriodEnd: null };
+  }
+
+  async setPromotionAutoRenew(ref: string, autoRenew: boolean) {
+    this.logger.log(`abonnement ${ref} : renouvellement ${autoRenew ? 'repris' : 'résilié'}`);
   }
 
   parseWebhook(rawBody: Buffer): WebhookEvent {

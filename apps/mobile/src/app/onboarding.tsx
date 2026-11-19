@@ -1,9 +1,10 @@
 import { Button, Icon, Screen, Text, useReduceMotion, useTheme, type LucideIcon, type Tone } from '@depano/ui';
 import { router } from 'expo-router';
-import { KeyRound, ReceiptEuro, Siren } from 'lucide-react-native';
+import { CalendarCheck, KeyRound, ReceiptEuro, Siren } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { features } from '@/lib/env';
 import { useAppStore } from '@/stores/app';
 
 interface Slide {
@@ -14,14 +15,25 @@ interface Slide {
   body: string;
 }
 
+/** Première slide : l'urgence si elle est activée (features.urgent), sinon la prise de rendez-vous. */
+const FIRST_SLIDE: Slide = features.urgent
+  ? {
+      key: 'urgence',
+      icon: Siren,
+      tone: 'urgent',
+      title: 'Un artisan chez vous, vite',
+      body: 'Fuite, panne de courant, chaudière à l’arrêt : un artisan vérifié accepte votre demande en quelques minutes.',
+    }
+  : {
+      key: 'rendez-vous',
+      icon: CalendarCheck,
+      tone: 'info',
+      title: 'Un artisan vérifié, au bon créneau',
+      body: 'Plomberie, électricité, chauffage : choisissez un artisan vérifié près de chez vous et réservez le créneau qui vous arrange.',
+    };
+
 const SLIDES: Slide[] = [
-  {
-    key: 'urgence',
-    icon: Siren,
-    tone: 'urgent',
-    title: 'Un artisan chez vous, vite',
-    body: 'Fuite, panne de courant, chaudière à l’arrêt : un artisan vérifié accepte votre demande en quelques minutes.',
-  },
+  FIRST_SLIDE,
   {
     key: 'prix',
     icon: ReceiptEuro,

@@ -7,6 +7,7 @@ import { badRequest } from '../../common/errors';
 import { DbConnection } from '../../infra/db';
 import { PaymentsService } from './payments.service';
 import { BookingsService } from '../bookings/bookings.service';
+import { PromotionService } from '../artisan/promotion.service';
 
 /** Webhooks Stripe : signature vérifiée sur le corps brut, idempotence par identifiant d'événement. */
 @ApiExcludeController()
@@ -18,6 +19,7 @@ export class WebhooksController {
     @Inject(PaymentsService) private readonly payments: PaymentsService,
     @Inject(BookingsService) private readonly bookings: BookingsService,
     @Inject(DbConnection) private readonly conn: DbConnection,
+    @Inject(PromotionService) private readonly promotion: PromotionService,
   ) {}
 
   @Public()
@@ -55,6 +57,17 @@ export class WebhooksController {
       }
       case 'payment_intent.payment_failed':
         await this.payments.markFailed(o.id, o.last_payment_error?.message ?? null);
+        break;
+      // Abonnement « Promouvoir mon compte » : chaque facture payée (création, renouvellement) prolonge la période.
+      case 'invoice.paid': {
+        const sub = o.parent?.subscription_details?.subscription;
+        const ref = typeof sub === 'string' ? sub : (sub?.id ?? null);
+        const end = o.lines?.data?.[0]?.period?.end;
+        if (ref) await this.promotion.onInvoicePaid(ref, typeof end === 'number' ? new Date(end * 1000) : null);
+        break;
+      }
+      case 'customer.subscription.deleted':
+        await this.promotion.onSubscriptionEnded(o.id);
         break;
       case 'account.updated':
         await this.conn.db.update(artisanProfiles).set({ payoutsEnabled: !!o.payouts_enabled }).where(eq(artisanProfiles.stripeAccountId, o.id));

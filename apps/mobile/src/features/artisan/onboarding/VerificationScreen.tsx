@@ -6,14 +6,16 @@ import {
   formatDateLong,
   Screen,
   SkeletonList,
+  SuccessCheck,
   Text,
   useTheme,
 } from '@depano/ui';
 import { Redirect, router, Stack } from 'expo-router';
-import { BadgeCheck, CircleAlert, CircleCheck, Clock, Hourglass } from 'lucide-react-native';
+import { CircleAlert, CircleCheck, Clock, Hourglass } from 'lucide-react-native';
 import { View } from 'react-native';
 import { QueryView } from '@/components/QueryView';
 import { useSwitchRole } from '@/components/RoleSwitch';
+import { features } from '@/lib/env';
 import { useArtisanProfile } from '../queries';
 import { addBusinessDays } from '../format';
 import { CHECKLIST_LABELS } from './kyc';
@@ -103,7 +105,11 @@ function Content({ p }: { p: ArtisanPrivateProfileDto }) {
       <View style={{ gap: t.spacing.lg }} testID="verification-screen">
         <View style={{ alignItems: 'center', gap: t.spacing.md, paddingVertical: t.spacing.lg }}>
           {approved ? (
-            <BadgeCheck size={64} color={t.colors.tone.success.solid} />
+            <SuccessCheck
+              size={64}
+              accessibilityLabel="Profil validé"
+              testID="verification-approved-check"
+            />
           ) : suspended ? (
             <CircleAlert size={64} color={t.colors.tone.danger.solid} />
           ) : (
@@ -118,7 +124,9 @@ function Content({ p }: { p: ArtisanPrivateProfileDto }) {
           </Text>
           <Text tone="secondary" align="center">
             {approved
-              ? 'Votre profil est visible des clients. Activez « Disponible pour urgences » depuis l’accueil pour recevoir des demandes.'
+              ? features.urgent
+                ? 'Votre profil est visible des clients. Activez « Disponible pour urgences » depuis l’accueil pour recevoir des demandes.'
+                : 'Votre profil est visible des clients : ils peuvent réserver vos créneaux dès maintenant.'
               : suspended
                 ? 'Vous pouvez consulter votre historique et vos revenus. Contactez le support pour en savoir plus.'
                 : `Un conseiller vérifie votre dossier sous ${RULES.kycReviewBusinessHours} h ouvrées. Vous recevrez une notification dès la validation.`}

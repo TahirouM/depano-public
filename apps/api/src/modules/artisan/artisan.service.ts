@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ACTIVE_BOOKING_STATUSES,
@@ -12,9 +13,11 @@ import {
   type AvailabilityExceptionDto,
   type AvailabilityRulesBody,
   type CompanyInfoDto,
+  type CustomServiceBody,
   type DocumentType,
   type DomainCode,
   type EarningsDto,
+  type EventColor,
   type KycChecklistDto,
   type PlanningDto,
   type QualificationBadge,
@@ -35,8 +38,11 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
   lt,
   ne,
+  notInArray,
+  or,
   services,
   sql,
   users,
@@ -49,10 +55,15 @@ import { BookingMapper } from '../bookings/booking-mapper.service';
 import { DispatchService } from '../dispatch/dispatch.service';
 import { ReliabilityService } from '../maintenance/reliability.service';
 import { MeService } from '../me/me.service';
+import { PromotionService } from './promotion.service';
+import { artisanServiceColumns, toArtisanServiceDto } from '../catalog/offer';
 import { badRequest, conflict, forbidden, notFound } from '../../common/errors';
 import { parisStartOfDay, parisToUtc, addDays, parisDate } from '../../common/time';
 
 type ProfileRow = typeof artisanProfiles.$inferSelect;
+
+/** Nombre maximal de motifs personnels par artisan. */
+const MAX_CUSTOM_SERVICES = 30;
 type DocumentRow = typeof artisanDocuments.$inferSelect;
 
 /**
@@ -121,6 +132,7 @@ export class ArtisanService {
     @Inject(DispatchService) private readonly dispatch: DispatchService,
     @Inject(ReliabilityService) private readonly reliability: ReliabilityService,
     @Inject(MeService) private readonly me: MeService,
+    @Inject(PromotionService) private readonly promotion: PromotionService,
   ) {}
 
   async profileRow(id: string) {
@@ -245,7 +257,7 @@ export class ArtisanService {
     const today = new Date().toISOString().slice(0, 10);
     const valid = (d?: DocumentRow) => !!d && ['pending', 'approved'].includes(d.status) && (!d.expiresAt || d.expiresAt >= today);
     return {
-      siret: !!p.siret && p.companyActive !== false,
+      siret: (!!p.siret || this.config.env.ARTISAN_SIRET_OPTIONAL) && p.companyActive !== false,
       domains: p.domains.length > 0,
       services: ctx.services > 0,
       zone: p.baseLat != null && p.baseLng != null && p.radiusKm > 0,
@@ -258,15 +270,17 @@ export class ArtisanService {
 
   async toPrivate(p: ProfileRow): Promise<ArtisanPrivateProfileDto> {
     const db = this.conn.db;
-    const [svc, rules, docs] = await Promise.all([
+    const [svc, rules, docs, [user]] = await Promise.all([
+      // Toutes les prestations de l'artisan, actives et désactivées (hors services retirés du catalogue).
       db
-        .select({ serviceId: services.id, name: services.name, domain: services.domain, priceCents: artisanServices.priceCents, durationMinutes: artisanServices.durationMinutes })
+        .select(artisanServiceColumns)
         .from(artisanServices)
         .innerJoin(services, eq(services.id, artisanServices.serviceId))
-        .where(eq(artisanServices.artisanId, p.id))
-        .orderBy(asc(services.domain), asc(services.sortOrder)),
+        .where(and(eq(artisanServices.artisanId, p.id), eq(services.active, true)))
+        .orderBy(asc(services.domain), asc(services.sortOrder), asc(services.name)),
       db.select().from(availabilityRules).where(eq(availabilityRules.artisanId, p.id)).orderBy(asc(availabilityRules.weekday), asc(availabilityRules.startTime)),
       this.documents(p.id),
+      db.select({ avatar: users.avatarFileId }).from(users).where(eq(users.id, p.userId)),
     ]);
     return {
       id: p.id,
@@ -289,11 +303,15 @@ export class ArtisanService {
       reliabilityScore: p.reliabilityScore,
       stripeAccountId: p.stripeAccountId,
       payoutsEnabled: p.payoutsEnabled,
-      services: svc.map((s) => ({ ...s, domain: s.domain as DomainCode })),
+      services: svc.map((s) => ({ ...toArtisanServiceDto(s), active: s.active })),
       availabilityRules: rules.map((r) => ({ weekday: r.weekday, start: r.startTime, end: r.endTime })),
       documents: await Promise.all(docs.map((d) => this.toDocumentDto(d))),
       portfolioUrls: await this.filesService.signedUrls(p.portfolioFileIds),
-      checklist: this.checklist(p, { services: svc.length, rules: rules.length, docs }),
+      portfolioFileIds: p.portfolioFileIds,
+      bannerUrl: await this.filesService.signedUrl(p.bannerFileId),
+      avatarUrl: await this.filesService.signedUrl(user?.avatar),
+      promotion: this.promotion.toDto(p),
+      checklist: this.checklist(p, { services: svc.filter((s) => s.active).length, rules: rules.length, docs }),
       submittedAt: p.submittedAt?.toISOString() ?? null,
       approvedAt: p.approvedAt?.toISOString() ?? null,
     };
@@ -305,23 +323,115 @@ export class ArtisanService {
 
   async updateProfile(artisan: { id: string; userId: string }, body: ArtisanProfileBody) {
     if (body.portfolioFileIds) await this.filesService.assertOwned(artisan.userId, body.portfolioFileIds, ['portfolio']);
+    // Bannière : photo dédiée ou l'une des réalisations.
+    if (body.bannerFileId) await this.filesService.assertOwned(artisan.userId, [body.bannerFileId], ['banner', 'portfolio']);
     const patch = Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined));
     if (Object.keys(patch).length) await this.conn.db.update(artisanProfiles).set(patch).where(eq(artisanProfiles.id, artisan.id));
     return this.profile(artisan.id);
   }
 
+  /**
+   * Tarifs de l'artisan. Les lignes `active: false` sont conservées (prix gardé, invisibles des clients).
+   * Les services du catalogue absents du corps sont retirés ; les motifs personnels absents restent intacts
+   * (seul DELETE /artisan/services/custom/:id les supprime).
+   */
   async setServices(artisan: { id: string }, body: ArtisanServicesBody) {
     const p = await this.profileRow(artisan.id);
     const ids = [...new Set(body.services.map((s) => s.serviceId))];
     if (ids.length !== body.services.length) throw badRequest('duplicate_service', 'Une prestation est présente plusieurs fois.');
     if (ids.length) {
       const rows = await this.conn.db.select().from(services).where(inArray(services.id, ids));
-      if (rows.length !== ids.length || rows.some((r) => !r.active)) throw badRequest('invalid_service', 'Prestation inconnue ou inactive.');
-      if (rows.some((r) => !p.domains.includes(r.domain))) throw badRequest('invalid_domain', 'Prestation hors de vos métiers déclarés.');
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const invalid = (r: (typeof rows)[number] | undefined) => !r || !r.active || (r.ownerArtisanId != null && r.ownerArtisanId !== artisan.id);
+      if (ids.some((id) => invalid(byId.get(id)))) throw badRequest('invalid_service', 'Prestation inconnue ou inactive.');
+      // Un motif désactivé d'un métier abandonné peut rester en sommeil ; seuls les motifs actifs sont contrôlés.
+      if (body.services.some((s) => s.active && !p.domains.includes(byId.get(s.serviceId)!.domain))) {
+        throw badRequest('invalid_domain', 'Prestation hors de vos métiers déclarés.');
+      }
     }
     await this.conn.db.transaction(async (tx) => {
-      await tx.delete(artisanServices).where(eq(artisanServices.artisanId, artisan.id));
-      if (body.services.length) await tx.insert(artisanServices).values(body.services.map((s) => ({ artisanId: artisan.id, ...s })));
+      const catalog = await tx
+        .select({ id: artisanServices.id, serviceId: artisanServices.serviceId })
+        .from(artisanServices)
+        .innerJoin(services, eq(services.id, artisanServices.serviceId))
+        .where(and(eq(artisanServices.artisanId, artisan.id), isNull(services.ownerArtisanId)));
+      const removed = catalog.filter((r) => !ids.includes(r.serviceId)).map((r) => r.id);
+      if (removed.length) await tx.delete(artisanServices).where(inArray(artisanServices.id, removed));
+      if (body.services.length) {
+        await tx
+          .insert(artisanServices)
+          .values(body.services.map((s) => ({ artisanId: artisan.id, ...s })))
+          .onConflictDoUpdate({
+            target: [artisanServices.artisanId, artisanServices.serviceId],
+            set: {
+              priceCents: sql`excluded.price_cents`,
+              durationMinutes: sql`excluded.duration_minutes`,
+              active: sql`excluded.active`,
+              updatedAt: new Date(),
+            },
+          });
+      }
+    });
+    return this.profile(artisan.id);
+  }
+
+  /** Motif personnel (hors catalogue) : visible uniquement sur le profil de son auteur, jamais en urgence. */
+  async addCustomService(artisan: { id: string }, body: CustomServiceBody) {
+    const p = await this.profileRow(artisan.id);
+    if (!p.domains.includes(body.domain)) throw badRequest('invalid_domain', 'Prestation hors de vos métiers déclarés.');
+    const own = await this.conn.db
+      .select({ name: services.name })
+      .from(services)
+      .where(and(eq(services.ownerArtisanId, artisan.id), eq(services.active, true)));
+    if (own.length >= MAX_CUSTOM_SERVICES) {
+      throw conflict('custom_services_limit', `Vous avez atteint la limite de ${MAX_CUSTOM_SERVICES} motifs personnels.`);
+    }
+    const name = body.name.replace(/\s+/g, ' ').trim();
+    if (own.some((s) => s.name.toLocaleLowerCase('fr') === name.toLocaleLowerCase('fr'))) {
+      throw conflict('custom_service_exists', 'Vous avez déjà un motif portant ce nom.');
+    }
+    await this.conn.db.transaction(async (tx) => {
+      const [svc] = await tx
+        .insert(services)
+        .values({
+          domain: body.domain,
+          slug: `custom-${randomUUID()}`,
+          name,
+          kind: body.kind,
+          urgentEligible: false,
+          referencePriceCents: body.priceCents,
+          defaultDurationMinutes: body.durationMinutes,
+          sortOrder: 1000,
+          ownerArtisanId: artisan.id,
+        })
+        .returning({ id: services.id });
+      await tx.insert(artisanServices).values({
+        artisanId: artisan.id,
+        serviceId: svc!.id,
+        priceCents: body.priceCents,
+        durationMinutes: body.durationMinutes,
+        active: true,
+      });
+    });
+    return this.profile(artisan.id);
+  }
+
+  /**
+   * Suppression définitive d'un motif personnel. Le service est conservé (désactivé) s'il est référencé par une
+   * intervention, pour l'historique et les factures.
+   */
+  async deleteCustomService(artisan: { id: string }, serviceId: string) {
+    const db = this.conn.db;
+    const [svc] = await db
+      .select({ id: services.id })
+      .from(services)
+      .where(and(eq(services.id, serviceId), eq(services.ownerArtisanId, artisan.id), eq(services.active, true)));
+    if (!svc) throw notFound('service_not_found', 'Motif introuvable.');
+    await db.transaction(async (tx) => {
+      await tx.delete(artisanServices).where(and(eq(artisanServices.artisanId, artisan.id), eq(artisanServices.serviceId, serviceId)));
+      const [used] = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.serviceId, serviceId)).limit(1);
+      if (used) await tx.update(services).set({ active: false }).where(eq(services.id, serviceId));
+      else await tx.delete(services).where(eq(services.id, serviceId));
     });
     return this.profile(artisan.id);
   }
@@ -342,6 +452,8 @@ export class ArtisanService {
     startsAt: e.startsAt.toISOString(),
     endsAt: e.endsAt.toISOString(),
     reason: e.reason,
+    kind: e.kind,
+    color: (e.color as EventColor | null) ?? null,
   });
 
   async exceptions(artisan: { id: string }) {
@@ -357,7 +469,10 @@ export class ArtisanService {
     const startsAt = new Date(body.startsAt);
     const endsAt = new Date(body.endsAt);
     if (endsAt <= startsAt) throw badRequest('invalid_range', 'La fin doit être postérieure au début.');
-    const [e] = await this.conn.db.insert(availabilityExceptions).values({ artisanId: artisan.id, startsAt, endsAt, reason: body.reason ?? null }).returning();
+    const [e] = await this.conn.db
+      .insert(availabilityExceptions)
+      .values({ artisanId: artisan.id, startsAt, endsAt, reason: body.reason ?? null, kind: body.kind, color: body.color ?? null })
+      .returning();
     return this.toExceptionDto(e!);
   }
 
@@ -366,7 +481,7 @@ export class ArtisanService {
       .delete(availabilityExceptions)
       .where(and(eq(availabilityExceptions.id, id), eq(availabilityExceptions.artisanId, artisan.id)))
       .returning({ id: availabilityExceptions.id });
-    if (!r.length) throw notFound('exception_not_found', 'Indisponibilité introuvable.');
+    if (!r.length) throw notFound('exception_not_found', 'Indisponibilité ou événement introuvable.');
   }
 
   async addDocument(artisan: { id: string; userId: string }, body: ArtisanDocumentBody) {
@@ -435,7 +550,7 @@ export class ArtisanService {
       .where(
         and(
           eq(bookings.artisanId, artisan.id),
-          ne(bookings.status, 'pending_payment'),
+          notInArray(bookings.status, ['pending_payment', 'requested']),
           sql`coalesce(${bookings.scheduledAt}, ${bookings.acceptedAt}, ${bookings.createdAt}) >= ${start.toISOString()}::timestamptz and coalesce(${bookings.scheduledAt}, ${bookings.acceptedAt}, ${bookings.createdAt}) < ${end.toISOString()}::timestamptz`,
         ),
       );
@@ -446,9 +561,15 @@ export class ArtisanService {
     const upcoming = await db
       .select()
       .from(bookings)
-      .where(and(eq(bookings.artisanId, artisan.id), inArray(bookings.status, [...ACTIVE_BOOKING_STATUSES])))
+      .where(and(eq(bookings.artisanId, artisan.id), inArray(bookings.status, ACTIVE_BOOKING_STATUSES.filter((st) => st !== 'requested'))))
       .orderBy(sql`coalesce(${bookings.scheduledAt}, ${bookings.acceptedAt}) asc nulls last`)
       .limit(6);
+    const requests = await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.artisanId, artisan.id), eq(bookings.status, 'requested')))
+      .orderBy(asc(bookings.scheduledAt))
+      .limit(20);
     const summaries = await this.mapper.toSummaries(upcoming, viewer);
     return {
       today: {
@@ -458,6 +579,7 @@ export class ArtisanService {
       },
       next: summaries[0] ?? null,
       pendingOffers: p.status === 'approved' ? await this.dispatch.pendingOffers(artisan.id) : [],
+      pendingRequests: await this.mapper.toSummaries(requests, viewer),
       upcoming: summaries.slice(1),
       urgentAvailable: p.urgentAvailable,
       status: p.status,
@@ -474,7 +596,8 @@ export class ArtisanService {
       .where(
         and(
           eq(bookings.artisanId, artisan.id),
-          ne(bookings.status, 'pending_payment'),
+          // Demandes en attente incluses ; paiements en attente seulement s'il les a proposés (prix, report).
+          or(ne(bookings.status, 'pending_payment'), isNotNull(bookings.artisanAcceptedAt)),
           sql`coalesce(${bookings.scheduledAt}, ${bookings.acceptedAt}, ${bookings.createdAt}) >= ${from.toISOString()}::timestamptz and coalesce(${bookings.scheduledAt}, ${bookings.acceptedAt}, ${bookings.createdAt}) < ${to.toISOString()}::timestamptz`,
         ),
       )

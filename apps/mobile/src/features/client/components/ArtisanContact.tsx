@@ -7,8 +7,13 @@ import { Linking, Platform, View } from 'react-native';
 import { api, errorMessage } from '@/lib/api';
 
 const CALLABLE = ['accepted', 'en_route', 'arrived', 'quote_pending', 'in_progress', 'awaiting_code', 'disputed'];
+/** Statuts où la messagerie n'est pas encore ouverte (l'artisan n'a pas accepté la demande). */
+const CHAT_PENDING = ['requested', 'pending_payment', 'searching'];
 
-/** Artisan assigné : photo, nom, note, appel via numéro relais (masqué) et chat. */
+/**
+ * Artisan assigné : photo, nom, note, appel via numéro relais (masqué) et chat. Tant que l'artisan n'a pas
+ * accepté, le bouton Message est désactivé avec son explication (la messagerie s'ouvre à l'acceptation).
+ */
 export function ArtisanContact({ booking: b, subtitle }: { booking: BookingDetailDto; subtitle?: string | null }) {
   const t = useTheme();
   const toast = useToast();
@@ -32,6 +37,7 @@ export function ArtisanContact({ booking: b, subtitle }: { booking: BookingDetai
   };
 
   const canCall = CALLABLE.includes(b.status);
+  const chatPending = !b.conversationId && CHAT_PENDING.includes(b.status);
   return (
     <Card style={{ gap: t.spacing.md }}>
       <View style={{ flexDirection: 'row', gap: t.spacing.md, alignItems: 'center' }}>
@@ -46,6 +52,21 @@ export function ArtisanContact({ booking: b, subtitle }: { booking: BookingDetai
           ) : null}
         </View>
       </View>
+      {chatPending ? (
+        <View style={{ gap: t.spacing.xs }}>
+          <Button
+            variant="secondary"
+            icon={MessageCircle}
+            label="Message"
+            disabled
+            accessibilityHint="Disponible dès que l'artisan accepte votre demande"
+            testID="chat-artisan-disabled"
+          />
+          <Text variant="caption" tone="secondary">
+            La messagerie s'ouvre dès que l'artisan accepte votre demande.
+          </Text>
+        </View>
+      ) : null}
       {canCall || b.conversationId ? (
         <View style={{ flexDirection: 'row', gap: t.spacing.sm }}>
           {canCall ? (

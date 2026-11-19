@@ -1,11 +1,12 @@
 import { Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { AddressBody, NotificationPrefsBody, PushTokenBody, SetActiveRoleBody, UpdateMeBody } from '@depano/schemas';
+import { AddressBody, ApplyReferralBody, NotificationPrefsBody, PushTokenBody, SetActiveRoleBody, UpdateMeBody } from '@depano/schemas';
 import type { z } from 'zod';
 import { CurrentUser, type AuthUser } from '../../common/auth';
 import { IdParam } from '../../common/params';
 import { ZBody } from '../../common/zod';
 import { MeService } from './me.service';
+import { ReferralService } from './referral.service';
 
 const AddressPatch = AddressBody.partial();
 
@@ -13,7 +14,10 @@ const AddressPatch = AddressBody.partial();
 @ApiBearerAuth()
 @Controller('me')
 export class MeController {
-  constructor(@Inject(MeService) private readonly me: MeService) {}
+  constructor(
+    @Inject(MeService) private readonly me: MeService,
+    @Inject(ReferralService) private readonly referral: ReferralService,
+  ) {}
 
   @Get()
   get(@CurrentUser() user: AuthUser) {
@@ -126,5 +130,16 @@ export class MeController {
   @Get('invoices')
   invoices(@CurrentUser() user: AuthUser) {
     return this.me.invoices(user);
+  }
+
+  @Get('referral')
+  referralInfo(@CurrentUser() user: AuthUser) {
+    return this.referral.get(user.id);
+  }
+
+  @Post('referral/apply')
+  @HttpCode(200)
+  applyReferral(@CurrentUser() user: AuthUser, @ZBody(ApplyReferralBody) body: z.output<typeof ApplyReferralBody>) {
+    return this.referral.apply(user.id, body.code);
   }
 }

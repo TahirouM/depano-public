@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   boolean,
   customType,
   date,
@@ -242,9 +243,11 @@ export const services = pgTable(
     defaultDurationMinutes: integer('default_duration_minutes').notNull().default(60),
     active: boolean('active').notNull().default(true),
     sortOrder: smallint('sort_order').notNull().default(0),
+    /** Motif personnel créé par un artisan (hors catalogue DEPANO) ; null = catalogue. */
+    ownerArtisanId: uuid('owner_artisan_id').references((): AnyPgColumn => artisanProfiles.id, { onDelete: 'cascade' }),
     ...timestamps,
   },
-  (t) => [index('services_domain_idx').on(t.domain)],
+  (t) => [index('services_domain_idx').on(t.domain), index('services_owner_idx').on(t.ownerArtisanId)],
 );
 
 export const artisanProfiles = pgTable(
@@ -273,6 +276,7 @@ export const artisanProfiles = pgTable(
     radiusKm: smallint('radius_km').notNull().default(15),
     travelFeeCents: integer('travel_fee_cents').notNull().default(2500),
     portfolioFileIds: uuid('portfolio_file_ids').array().notNull().default(sql`ARRAY[]::uuid[]`),
+    bannerFileId: uuid('banner_file_id'),
     /** Disponible pour les urgences + dernière position connue. */
     urgentAvailable: boolean('urgent_available').notNull().default(false),
     currentLat: doublePrecision('current_lat'),
@@ -289,7 +293,10 @@ export const artisanProfiles = pgTable(
     urgentSuspendedUntil: ts('urgent_suspended_until'),
     stripeAccountId: varchar('stripe_account_id', { length: 64 }),
     payoutsEnabled: boolean('payouts_enabled').notNull().default(false),
+    /** Mise en avant payante (« Promouvoir mon compte ») : active tant que pro_until > now(). */
     proUntil: ts('pro_until'),
+    promotionAutoRenew: boolean('promotion_auto_renew').notNull().default(false),
+    promotionSubscriptionRef: varchar('promotion_subscription_ref', { length: 128 }),
     submittedAt: ts('submitted_at'),
     approvedAt: ts('approved_at'),
     approvedBy: uuid('approved_by'),
@@ -314,6 +321,8 @@ export const artisanServices = pgTable(
       .references(() => services.id),
     priceCents: integer('price_cents').notNull(),
     durationMinutes: integer('duration_minutes').notNull(),
+    /** false : motif désactivé par l'artisan (prix conservé, invisible des clients). */
+    active: boolean('active').notNull().default(true),
     ...timestamps,
   },
   (t) => [uniqueIndex('artisan_services_uq').on(t.artisanId, t.serviceId)],
@@ -367,6 +376,9 @@ export const availabilityExceptions = pgTable(
     startsAt: ts('starts_at').notNull(),
     endsAt: ts('ends_at').notNull(),
     reason: varchar('reason', { length: 200 }),
+    /** unavailable : congés, absence ; personal : événement perso affiché dans le planning (bloque aussi les créneaux). */
+    kind: varchar('kind', { length: 20 }).$type<'unavailable' | 'personal'>().notNull().default('unavailable'),
+    color: varchar('color', { length: 16 }),
     ...timestamps,
   },
   (t) => [index('availability_exceptions_artisan_idx').on(t.artisanId, t.startsAt)],
@@ -454,6 +466,16 @@ export const bookings = pgTable(
     withGuarantee: boolean('with_guarantee').notNull().default(false),
     waivesWithdrawal: boolean('waives_withdrawal').notNull().default(false),
     travelOnly: boolean('travel_only').notNull().default(false),
+    /** Demande « Autre » : le prix est proposé par l'artisan puis accepté par le client. */
+    priceOnRequest: boolean('price_on_request').notNull().default(false),
+    /** Réponse positive de l'artisan à une demande de RDV (ou report proposé par lui). */
+    artisanAcceptedAt: ts('artisan_accepted_at'),
+    /** RDV reprogrammé par l'artisan depuis une intervention non réalisable. */
+    rescheduledFromId: uuid('rescheduled_from_id'),
+    /** Note privée de l'artisan (jamais montrée au client). */
+    artisanNote: text('artisan_note'),
+    /** Réduction parrainage appliquée (centimes, déjà déduite de total_cents). */
+    discountCents: integer('discount_cents').notNull().default(0),
     /** Code de fin à 4 chiffres : haché pour la vérification, chiffré pour l'affichage client. */
     completionCodeHash: varchar('completion_code_hash', { length: 128 }),
     completionCodeEnc: text('completion_code_enc'),
@@ -583,6 +605,9 @@ export const interventionReports = pgTable('intervention_reports', {
     .unique()
     .references(() => bookings.id, { onDelete: 'cascade' }),
   feasible: boolean('feasible').notNull(),
+  /** Intervention non réalisable : raison déclarée (NOT_FEASIBLE_REASONS). */
+  notFeasibleReason: varchar('not_feasible_reason', { length: 40 }),
+  rescheduledBookingId: uuid('rescheduled_booking_id'),
   materials: text('materials'),
   notes: text('notes'),
   voiceFileId: uuid('voice_file_id'),
@@ -592,6 +617,28 @@ export const interventionReports = pgTable('intervention_reports', {
   afterFileIds: uuid('after_file_ids').array().notNull().default(sql`ARRAY[]::uuid[]`),
   ...timestamps,
 });
+
+/**
+ * Crédits de parrainage : un par personne (parrain et filleul) au moment où le filleul saisit le code.
+ * Consommé par la prochaine intervention réservée ; rendu si elle est annulée sans frais.
+ */
+export const referralCredits = pgTable(
+  'referral_credits',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** L'autre personne du parrainage. */
+    otherUserId: uuid('other_user_id').references(() => users.id, { onDelete: 'set null' }),
+    role: varchar('role', { length: 10 }).$type<'referrer' | 'referee'>().notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    usedBookingId: uuid('used_booking_id').references(() => bookings.id, { onDelete: 'set null' }),
+    usedAt: ts('used_at'),
+    ...timestamps,
+  },
+  (t) => [index('referral_credits_user_idx').on(t.userId, t.usedAt)],
+);
 
 export const disputes = pgTable(
   'disputes',

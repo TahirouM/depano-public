@@ -1,0 +1,14 @@
+[Unit]
+Description=DEPANO workers BullMQ
+After=network-online.target docker.service depano-api.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/depano/apps/worker
+EnvironmentFile=/opt/depano/.env
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

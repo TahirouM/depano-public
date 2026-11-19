@@ -2,7 +2,7 @@ import type { NotificationDto, NotificationType } from '@depano/schemas';
 import { Button, Chip, Icon, Screen, SkeletonList, Text, formatTime, relativeDayLabel, dayKey, useTheme, type LucideIcon } from '@depano/ui';
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { router, Stack, type Href } from 'expo-router';
-import { Bell, Briefcase, CalendarClock, MessageCircle, Siren, Star, Wallet, Wrench } from 'lucide-react-native';
+import { Bell, Briefcase, CalendarClock, Gift, MessageCircle, ReceiptEuro, Siren, Star, Wallet, Wrench } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, View } from 'react-native';
 import type { Paginated } from '@depano/schemas';
@@ -24,6 +24,8 @@ const FILTERS: { value: Filter; label: string }[] = [
 
 const BOOKING_TYPES = new Set<NotificationType>([
   'booking_created',
+  'booking_requested',
+  'price_proposed',
   'booking_accepted',
   'booking_status',
   'booking_cancelled',
@@ -42,6 +44,8 @@ const ICONS: Partial<Record<NotificationType, LucideIcon>> = {
   payout: Wallet,
   artisan_approved: Briefcase,
   artisan_rejected: Briefcase,
+  price_proposed: ReceiptEuro,
+  referral_reward: Gift,
 };
 
 type Feed = InfiniteData<Paginated<NotificationDto>, string | undefined>;

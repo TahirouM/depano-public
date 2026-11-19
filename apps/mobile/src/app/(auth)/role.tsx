@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Briefcase, ChevronRight, House } from 'lucide-react-native';
 import { View } from 'react-native';
 import { api } from '@/lib/api';
+import { features } from '@/lib/env';
 import { qk } from '@/lib/query/keys';
 import { finishAuthFlow } from '@/lib/session';
 import { useAppStore, type ActiveRole } from '@/stores/app';
@@ -35,7 +36,7 @@ export default function Role() {
         <RoleCard
           icon={House}
           title="J'ai besoin d'un artisan"
-          body="Urgence ou rendez-vous, avec le prix affiché avant de vous engager."
+          body={features.urgent ? 'Urgence ou rendez-vous, avec le prix affiché avant de vous engager.' : 'Prenez rendez-vous avec un artisan vérifié, avec le prix affiché avant de vous engager.'}
           onPress={() => choose('client')}
         />
         <RoleCard

@@ -2,13 +2,16 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   ACTIVE_BOOKING_STATUSES,
   DEEP_LINKS,
+  NOT_FEASIBLE_REASON_LABELS,
   RULES,
   TERMINAL_BOOKING_STATUSES,
   clientDisputeBlockedReason,
   computeCommission,
   computePrice,
+  formatEuros,
   quoteNeedsNewAuthorization,
   type AnswerQuoteBody,
+  type ArtisanNoteBody,
   type BookingDetailDto,
   type BookingListQuery,
   type BookingStatus,
@@ -20,9 +23,11 @@ import {
   type CreateQuoteBody,
   type DisputeBody,
   type LocationBody,
+  type NotFeasibleBody,
   type Paginated,
   type PaymentSessionDto,
   type ReportBody,
+  type RespondRequestBody,
   type ReviewBody,
   type ReviewDto,
   type BookingSummaryDto,
@@ -40,16 +45,19 @@ import {
   eq,
   inArray,
   interventionReports,
+  isNotNull,
   isNull,
   lt,
   notInArray,
   or,
   quoteLines,
   quotes,
+  referralCredits,
   services,
   sql,
   users,
   zones,
+  type Tx,
 } from '@depano/db';
 import { DbConnection } from '../../infra/db';
 import { JobsService } from '../../infra/jobs';
@@ -65,21 +73,25 @@ import { distanceKm, formatParis, hours, minutes, naiveEtaMinutes } from '../../
 import { BookingStateService, type BookingRow } from './booking-state.service';
 import { BookingMapper } from './booking-mapper.service';
 import { CompletionCodeService } from './completion-code.service';
-import { clientCancellationTerms, closingAmount, type Viewer } from './booking-rules';
+import { clientCancellationTerms, closingAmount, requestDeadline, type Viewer } from './booking-rules';
 import { PaymentsService } from '../payments/payments.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FilesService } from '../files/files.service';
 import { ChatService } from '../chat/chat.service';
 import { SlotsService } from '../catalog/slots.service';
+import { offeredBy } from '../catalog/offer';
 import { ReviewsService } from '../catalog/reviews.service';
 import { DispatchService } from '../dispatch/dispatch.service';
 import { AuditService } from '../admin/audit.service';
 import { ReliabilityService } from '../maintenance/reliability.service';
+import { ReferralService } from '../me/referral.service';
 
 export const DEFAULT_TRAVEL_FEE_CENTS = 2500;
 export const QUOTE_TTL_MINUTES = 30;
 const CALLABLE: BookingStatus[] = ['accepted', 'en_route', 'arrived', 'quote_pending', 'in_progress', 'awaiting_code', 'disputed'];
 const LOCATION_STATUSES: BookingStatus[] = ['accepted', 'en_route', 'arrived', 'quote_pending', 'in_progress'];
+
+const pgCode = (e: unknown) => (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code;
 
 @Injectable()
 export class BookingsService {
@@ -103,6 +115,7 @@ export class BookingsService {
     @Inject(DispatchService) private readonly dispatch: DispatchService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(ReliabilityService) private readonly reliability: ReliabilityService,
+    @Inject(ReferralService) private readonly referral: ReferralService,
   ) {}
 
   /* ------------------------------------------------------------------ */
@@ -165,6 +178,10 @@ export class BookingsService {
     if (body.serviceId) {
       const [s] = await db.select().from(services).where(and(eq(services.id, body.serviceId), eq(services.active, true)));
       if (!s || s.domain !== body.domain) throw badRequest('invalid_service', 'Prestation invalide pour ce métier.');
+      // Motif personnel : réservable uniquement en RDV auprès de l'artisan qui l'a créé.
+      if (s.ownerArtisanId && (body.kind !== 'scheduled' || s.ownerArtisanId !== body.artisanId)) {
+        throw badRequest('invalid_service', 'Prestation invalide pour ce métier.');
+      }
       if (body.kind === 'urgent' && !s.urgentEligible) throw badRequest('service_not_urgent', "Cette prestation n'est pas disponible en urgence.");
       service = s;
     }
@@ -213,8 +230,11 @@ export class BookingsService {
         .select({ price: artisanServices.priceCents, serviceId: artisanServices.serviceId, domain: services.domain })
         .from(artisanServices)
         .innerJoin(services, eq(services.id, artisanServices.serviceId))
-        .where(eq(artisanServices.artisanId, a.id));
-      if (service) {
+        .where(offeredBy(a.id));
+      if (body.priceOnRequest) {
+        // Demande « Autre » : le prix sera proposé par l'artisan.
+        basePriceCents = 0;
+      } else if (service) {
         const o = offered.find((x) => x.serviceId === service!.id);
         if (!o) throw badRequest('service_not_offered', "Cet artisan ne propose pas cette prestation.");
         basePriceCents = o.price;
@@ -233,11 +253,13 @@ export class BookingsService {
       const [r] = await db
         .select({ p: sql<number>`min(${services.referencePriceCents})::int` })
         .from(services)
-        .where(and(eq(services.domain, body.domain), eq(services.active, true), eq(services.urgentEligible, true)));
+        .where(and(eq(services.domain, body.domain), eq(services.active, true), isNull(services.ownerArtisanId), eq(services.urgentEligible, true)));
       basePriceCents = r?.p ?? 0;
     }
 
     const price = computePrice({ basePriceCents, travelFeeCents, urgent: body.kind === 'urgent', withGuarantee: body.withGuarantee });
+    // Demande de prix : pas de paiement, directement en attente de l'artisan (le créneau est réservé).
+    const status = body.priceOnRequest ? 'requested' : 'pending_payment';
     let row: BookingRow | undefined;
     for (let attempt = 0; attempt < 5 && !row; attempt++) {
       try {
@@ -247,7 +269,7 @@ export class BookingsService {
             .values({
               reference: bookingReference(),
               kind: body.kind,
-              status: 'pending_payment',
+              status,
               clientId: user.id,
               artisanId: artisan?.id ?? null,
               domain: body.domain,
@@ -267,24 +289,60 @@ export class BookingsService {
               commissionRate: zone?.commissionRate ?? RULES.defaultCommissionRate,
               withGuarantee: body.withGuarantee,
               waivesWithdrawal: body.waivesWithdrawal,
+              priceOnRequest: body.priceOnRequest,
               zoneId: zone?.id ?? null,
             })
             .returning();
-          await this.state.logCreation(tx, b!.id, user.id);
-          if (artisan) await this.chat.ensureConversation(tx, b!.id, user.id, artisan.userId);
-          return b!;
+          await this.state.logCreation(tx, b!.id, user.id, { status });
+          // La messagerie ne s'ouvre qu'à l'acceptation par l'artisan (aucune conversation ici).
+          return this.applyReferralDiscount(tx, b!);
         });
       } catch (e) {
-        const code = (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code;
+        const code = pgCode(e);
         if (code === '23P01') throw conflict('slot_unavailable', "Ce créneau vient d'être réservé.");
         if (code === '23505' && String((e as { cause?: { constraint_name?: string } }).cause?.constraint_name ?? e).includes('reference')) continue;
         throw e;
       }
     }
     if (!row) throw new Error('Impossible de générer une référence unique');
-    const payment = await this.payments.createSession(row, body.paymentMethodId);
+    let payment: PaymentSessionDto | null = null;
+    if (row.status === 'requested') {
+      await this.onRequested(row, row.createdAt);
+    } else {
+      payment = await this.payments.createSession(row, body.paymentMethodId);
+    }
     const fresh = await this.load(row.id);
     return { booking: await this.mapper.toDetail(fresh, { userId: user.id, actor: 'client' }), payment };
+  }
+
+  /** Crédit de parrainage du client : consommé par l'intervention créée, déduit du total (même transaction). */
+  private async applyReferralDiscount(tx: Tx, b: BookingRow): Promise<BookingRow> {
+    const discountCents = await this.referral.consume(tx, b.clientId, b.id, b.totalCents);
+    if (!discountCents) return b;
+    const [updated] = await tx
+      .update(bookings)
+      .set({ discountCents, totalCents: b.totalCents - discountCents })
+      .where(eq(bookings.id, b.id))
+      .returning();
+    return updated!;
+  }
+
+  /** Demande envoyée à l'artisan : expiration programmée (+ notification pour une demande créée sans transition). */
+  private async onRequested(b: BookingRow, requestedAt: Date) {
+    const deadline = requestDeadline(b, requestedAt);
+    await this.jobs.add('bookings', 'request-expire', { bookingId: b.id }, { delayMs: Math.max(0, deadline.getTime() - Date.now()), jobId: `request-${b.id}` });
+    if (b.status === 'requested' && b.priceOnRequest && b.artisanId) {
+      const [a] = await this.conn.db.select({ userId: artisanProfiles.userId }).from(artisanProfiles).where(eq(artisanProfiles.id, b.artisanId));
+      if (a) {
+        await this.notifications.notify(a.userId, {
+          type: 'booking_requested',
+          title: 'Nouvelle demande de prix',
+          body: `${b.problemReason} — ${b.scheduledAt ? formatParis(b.scheduledAt) : ''}. Proposez un prix ou refusez la demande.`,
+          link: DEEP_LINKS.intervention(b.id),
+          data: { bookingId: b.id, status: b.status },
+        });
+      }
+    }
   }
 
   /** Vérifie l'empreinte auprès du prestataire puis lance le dispatch (urgence) ou confirme le RDV. */
@@ -308,9 +366,20 @@ export class BookingsService {
       if (b.kind === 'urgent') {
         b = await this.state.transition(b.id, 'searching', 'system', userId, { patch: { dispatchStartedAt: new Date() } });
         await this.jobs.add('dispatch', 'start', { bookingId: b.id }, { jobId: `start-${b.id}` });
-      } else {
-        b = await this.state.transition(b.id, 'accepted', 'system', userId, { patch: (row) => this.codes.generate(row.id) });
+      } else if (b.artisanAcceptedAt) {
+        // Prix proposé ou report proposé par l'artisan : déjà accepté, le paiement confirme le RDV.
+        b = await this.state.transition(b.id, 'accepted', 'system', userId, {
+          patch: (row) => this.codes.generate(row.id),
+          inTx: async (tx, row) => {
+            await this.ensureConversationTx(tx, row);
+          },
+        });
+        await this.jobs.remove('bookings', `request-${b.id}`);
         await this.scheduleReminders(b, sync.setup);
+      } else {
+        // Demande de RDV : l'artisan accepte ou refuse (POST /bookings/:id/respond).
+        b = await this.state.transition(b.id, 'requested', 'system', userId);
+        await this.onRequested(b, new Date());
       }
     } catch (e) {
       if (e instanceof AppError && e.code === 'invalid_transition') return this.load(b.id);
@@ -335,6 +404,257 @@ export class BookingsService {
     return this.mapper.toDetail(b, { userId: user.id, actor: 'client' });
   }
 
+  /** Session de paiement d'une intervention en attente du client (prix proposé, report proposé par l'artisan). */
+  async paymentSession(user: AuthUser, id: string): Promise<PaymentSessionDto> {
+    const b = await this.load(id);
+    await this.requireActor(user, b, 'client', 'Seul le client peut régler cette intervention.');
+    if (b.status !== 'pending_payment') throw conflict('payment_not_expected', "Aucun paiement n'est attendu pour cette intervention.");
+    return this.payments.sessionFor(b);
+  }
+
+  private async ensureConversationTx(tx: Tx, b: BookingRow) {
+    if (!b.artisanId) return;
+    const [a] = await tx.select({ userId: artisanProfiles.userId }).from(artisanProfiles).where(eq(artisanProfiles.id, b.artisanId));
+    if (a) await this.chat.ensureConversation(tx, b.id, b.clientId, a.userId);
+  }
+
+  /** Carte enregistrée sans empreinte (RDV lointain) : l'autorisation sera faite 24 h avant. */
+  private async hasDeferredAuthorization(bookingId: string) {
+    const rows = await this.payments.listForBooking(bookingId);
+    return rows.some((p) => p.kind === 'setup' && p.status === 'authorized') && !rows.some((p) => p.kind === 'authorization' && p.status === 'authorized');
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Demandes de RDV (réponse de l'artisan)                             */
+  /* ------------------------------------------------------------------ */
+
+  async respond(user: AuthUser, id: string, body: RespondRequestBody): Promise<BookingDetailDto> {
+    const b = await this.load(id);
+    const viewer = await this.requireActor(user, b, 'artisan', "Seul l'artisan sollicité peut répondre à la demande.");
+    const guard = (row: BookingRow) => {
+      if (row.status !== 'requested') throw conflict('request_not_pending', "Cette demande n'est plus en attente de réponse.");
+    };
+    if (body.accept && b.priceOnRequest && !body.priceCents) throw badRequest('price_required', 'Indiquez le prix de la prestation pour accepter la demande.');
+    if (!body.accept) {
+      // Refus d'une demande : ce n'est pas l'annulation d'un RDV accepté, la fiabilité de l'artisan n'est pas affectée.
+      await this.state.transition(b.id, 'cancelled_by_artisan', 'artisan', user.id, {
+        note: body.message ?? 'Demande refusée',
+        guard,
+        patch: { cancellationReason: body.message ?? "Demande refusée par l'artisan" },
+      });
+      await this.payments.releaseAll(b.id);
+    } else if (b.priceOnRequest) {
+      const price = computePrice({
+        basePriceCents: body.priceCents!,
+        travelFeeCents: b.travelFeeCents,
+        urgent: false,
+        withGuarantee: b.withGuarantee,
+        discountCents: await this.referral.creditFor(b.id),
+      });
+      const endsAt = body.durationMinutes && b.scheduledAt ? new Date(b.scheduledAt.getTime() + minutes(body.durationMinutes)) : null;
+      const now = new Date();
+      try {
+        await this.state.transition(b.id, 'pending_payment', 'artisan', user.id, {
+          note: body.message ?? `Prix proposé : ${formatEuros(price.totalCents)}`,
+          guard,
+          patch: { basePriceCents: price.baseCents, discountCents: price.discountCents, totalCents: price.totalCents, artisanAcceptedAt: now, ...(endsAt ? { endsAt } : {}) },
+          inTx: (tx, row) => this.ensureConversationTx(tx, row),
+        });
+      } catch (e) {
+        if (pgCode(e) === '23P01') throw conflict('slot_unavailable', 'Cette durée chevauche un autre rendez-vous de votre planning.');
+        throw e;
+      }
+      // Le client a 24 h (au plus tard l'heure du RDV) pour valider le prix en payant.
+      const deadline = requestDeadline(b, now);
+      await this.jobs.remove('bookings', `request-${b.id}`);
+      await this.jobs.add('bookings', 'request-expire', { bookingId: b.id }, { delayMs: Math.max(0, deadline.getTime() - Date.now()), jobId: `request-${b.id}` });
+    } else {
+      const accepted = await this.state.transition(b.id, 'accepted', 'artisan', user.id, {
+        note: body.message ?? null,
+        guard,
+        patch: (row) => ({ ...this.codes.generate(row.id), artisanAcceptedAt: new Date() }),
+        inTx: (tx, row) => this.ensureConversationTx(tx, row),
+      });
+      await this.scheduleReminders(accepted, await this.hasDeferredAuthorization(b.id));
+    }
+    if (!(body.accept && b.priceOnRequest)) await this.jobs.remove('bookings', `request-${b.id}`);
+    if (body.accept && body.message?.trim()) {
+      const conv = await this.chat.conversationForBooking(b.id);
+      if (conv) {
+        await this.chat
+          .send(user.id, conv.id, { clientId: `respond-${b.id}`, kind: 'text', body: body.message.trim() })
+          .catch((e) => this.logger.warn(`message de réponse ${b.reference} : ${e}`));
+      }
+    }
+    return this.mapper.toDetail(await this.load(b.id), viewer);
+  }
+
+  /** Job request-expire : demande sans réponse de l'artisan, ou prix / report proposé jamais validé par le client. */
+  async expireRequest(bookingId: string) {
+    const b = await this.load(bookingId);
+    const awaitingClient = b.status === 'pending_payment' && !!b.artisanAcceptedAt;
+    if (b.status !== 'requested' && !awaitingClient) return { skipped: true, status: b.status };
+    try {
+      await this.state.transition(b.id, awaitingClient ? 'cancelled_by_client' : 'expired', 'system', null, {
+        note: awaitingClient ? 'Proposition non validée à temps' : "Pas de réponse de l'artisan",
+        guard: (row) => {
+          if (row.status !== b.status) throw conflict('invalid_transition', 'Intervention modifiée entre-temps.');
+        },
+        patch: awaitingClient ? { cancellationReason: 'Proposition non validée à temps' } : {},
+      });
+    } catch (e) {
+      if (e instanceof AppError && e.code === 'invalid_transition') return { skipped: true };
+      throw e;
+    }
+    await this.payments.releaseAll(b.id);
+    return { expired: true };
+  }
+
+  /** Note privée de l'artisan (jamais visible du client). */
+  async setArtisanNote(user: AuthUser, id: string, body: ArtisanNoteBody): Promise<BookingDetailDto> {
+    const b = await this.load(id);
+    const viewer = await this.requireActor(user, b, 'artisan', "Seul l'artisan de l'intervention peut annoter l'intervention.");
+    const [updated] = await this.conn.db
+      .update(bookings)
+      .set({ artisanNote: body.note?.trim() || null, updatedAt: new Date() })
+      .where(eq(bookings.id, b.id))
+      .returning();
+    return this.mapper.toDetail(updated!, viewer);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Intervention non réalisable                                        */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Sur place, l'intervention est impossible : seuls les frais de déplacement sont dus (capture à la saisie du code
+   * ou automatique 24 h après, litige possible). L'artisan annule, ou propose une nouvelle date que le client valide.
+   */
+  async notFeasible(user: AuthUser, id: string, body: NotFeasibleBody): Promise<BookingDetailDto> {
+    const b = await this.load(id);
+    const viewer = await this.requireActor(user, b, 'artisan', "Seul l'artisan de l'intervention peut la déclarer non réalisable.");
+    if (b.status !== 'en_route' && b.status !== 'arrived' && b.status !== 'in_progress') {
+      throw conflict('invalid_transition', "L'intervention ne peut être déclarée non réalisable qu'une fois en route, sur place ou en cours.");
+    }
+    await this.filesService.assertOwned(user.id, body.photoFileIds, ['report_before', 'problem_photo']);
+    let rescheduled: BookingRow | null = null;
+    if (body.action === 'reschedule') {
+      const at = new Date(body.rescheduleAt!);
+      if (at.getTime() <= Date.now()) throw badRequest('invalid_reschedule', 'Choisissez une date à venir.');
+      rescheduled = await this.createRescheduled(b, at, user.id);
+    }
+    try {
+      if (b.status === 'en_route') await this.state.transition(b.id, 'arrived', 'artisan', user.id, { note: 'Arrivé sur place', silent: true });
+      await this.state.transition(b.id, 'awaiting_code', 'artisan', user.id, {
+        note: `Intervention non réalisable : ${NOT_FEASIBLE_REASON_LABELS[body.reason]}`,
+        silent: true,
+        guard: (row) => {
+          if (row.status !== 'arrived' && row.status !== 'in_progress') {
+            throw conflict('invalid_transition', "L'intervention ne peut être déclarée non réalisable qu'une fois sur place.");
+          }
+        },
+        patch: { travelOnly: true },
+        inTx: async (tx, row) => {
+          const values = {
+            feasible: false,
+            notFeasibleReason: body.reason,
+            notes: body.comment ?? null,
+            beforeFileIds: body.photoFileIds,
+            afterFileIds: [],
+            materials: null,
+            voiceFileId: null,
+            followUpNeeded: !!rescheduled,
+            rescheduledBookingId: rescheduled?.id ?? null,
+          };
+          await tx.insert(interventionReports).values({ bookingId: row.id, ...values }).onConflictDoUpdate({ target: interventionReports.bookingId, set: values });
+        },
+      });
+    } catch (e) {
+      // L'intervention d'origine n'a pas changé : on retire le report proposé (et on lui rend son crédit).
+      if (rescheduled) {
+        await this.conn.db.update(referralCredits).set({ usedBookingId: b.id }).where(eq(referralCredits.usedBookingId, rescheduled.id));
+        await this.conn.db.delete(bookings).where(eq(bookings.id, rescheduled.id));
+      }
+      throw e;
+    }
+    await this.jobs.add('bookings', 'auto-capture', { bookingId: b.id }, { delayMs: hours(RULES.completionCode.autoCaptureAfterHours), jobId: `autocapture-${b.id}` });
+    // Déplacement seul : la réduction parrainage n'est pas consommée (reportée sur le nouveau RDV le cas échéant).
+    if (!rescheduled) await this.referral.release(b.id);
+
+    const [a] = await this.conn.db.select({ name: artisanProfiles.displayName }).from(artisanProfiles).where(eq(artisanProfiles.id, viewer.artisanId!));
+    const name = a?.name ?? "L'artisan";
+    await this.notifications.notify(b.clientId, {
+      type: 'booking_status',
+      title: 'Intervention non réalisable',
+      body: `${name} n'a pas pu réaliser l'intervention (${NOT_FEASIBLE_REASON_LABELS[body.reason].toLowerCase()}). Seuls les frais de déplacement (${formatEuros(b.travelFeeCents)}) vous seront facturés. Un souci ? Signalez-le depuis l'intervention.`,
+      link: DEEP_LINKS.intervention(b.id),
+      data: { bookingId: b.id, status: 'awaiting_code', notFeasible: body.reason },
+    });
+    if (rescheduled) {
+      await this.notifications.notify(b.clientId, {
+        type: 'booking_status',
+        title: 'Nouveau rendez-vous proposé',
+        body: `${name} vous propose de revenir le ${formatParis(rescheduled.scheduledAt!)}. Validez ce rendez-vous pour le confirmer.`,
+        link: DEEP_LINKS.intervention(rescheduled.id),
+        data: { bookingId: rescheduled.id, status: rescheduled.status, rescheduledFromId: b.id },
+      });
+      await this.onRequested(rescheduled, rescheduled.createdAt);
+    }
+    return this.mapper.toDetail(await this.load(b.id), viewer);
+  }
+
+  /** Nouveau RDV proposé par l'artisan (déjà accepté par lui) : le client le confirme en validant le paiement. */
+  private async createRescheduled(b: BookingRow, scheduledAt: Date, artisanUserId: string): Promise<BookingRow> {
+    const durationMs = b.scheduledAt && b.endsAt ? b.endsAt.getTime() - b.scheduledAt.getTime() : minutes(await this.slots.durationFor(b.artisanId!, b.serviceId));
+    const credit = await this.referral.creditFor(b.id);
+    const price = computePrice({ basePriceCents: b.basePriceCents, travelFeeCents: b.travelFeeCents, urgent: false, withGuarantee: false, discountCents: credit });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await this.conn.db.transaction(async (tx) => {
+          const [nb] = await tx
+            .insert(bookings)
+            .values({
+              reference: bookingReference(),
+              kind: 'scheduled',
+              status: 'pending_payment',
+              clientId: b.clientId,
+              artisanId: b.artisanId,
+              domain: b.domain,
+              serviceId: b.serviceId,
+              scheduledType: b.scheduledType ?? 'repair',
+              addressId: b.addressId,
+              problemReason: b.problemReason,
+              problemDescription: b.problemDescription,
+              problemFileIds: b.problemFileIds,
+              scheduledAt,
+              endsAt: new Date(scheduledAt.getTime() + durationMs),
+              basePriceCents: price.baseCents,
+              travelFeeCents: price.travelFeeCents,
+              discountCents: price.discountCents,
+              totalCents: price.totalCents,
+              commissionRate: b.commissionRate,
+              priceOnRequest: b.priceOnRequest,
+              artisanAcceptedAt: new Date(),
+              rescheduledFromId: b.id,
+              zoneId: b.zoneId,
+            })
+            .returning();
+          await this.state.logCreation(tx, nb!.id, artisanUserId, { status: 'pending_payment', actor: 'artisan', note: `Report de ${b.reference}` });
+          // Le crédit parrainage suit l'intervention reportée.
+          await tx.update(referralCredits).set({ usedBookingId: nb!.id }).where(eq(referralCredits.usedBookingId, b.id));
+          await this.ensureConversationTx(tx, nb!);
+          return nb!;
+        });
+      } catch (e) {
+        const code = pgCode(e);
+        if (code === '23P01') throw conflict('slot_unavailable', "Ce créneau n'est pas libre dans votre planning.");
+        if (code === '23505' && String((e as { cause?: { constraint_name?: string } }).cause?.constraint_name ?? e).includes('reference')) continue;
+        throw e;
+      }
+    }
+    throw new Error('Impossible de générer une référence unique');
+  }
+
   /* ------------------------------------------------------------------ */
   /* Listes                                                             */
   /* ------------------------------------------------------------------ */
@@ -345,7 +665,8 @@ export class BookingsService {
     if (q.as === 'artisan') {
       const a = await this.artisanOf(user.id);
       if (!a) throw forbidden('artisan_profile_required', 'Un profil artisan est requis.');
-      ownerCond = and(eq(bookings.artisanId, a.id), notInArray(bookings.status, ['pending_payment']));
+      // Paiements en attente invisibles pour l'artisan, sauf ce qu'il a lui-même proposé (prix, report).
+      ownerCond = and(eq(bookings.artisanId, a.id), or(notInArray(bookings.status, ['pending_payment']), isNotNull(bookings.artisanAcceptedAt)));
       viewer = { userId: user.id, actor: 'artisan', artisanId: a.id };
     } else {
       ownerCond = eq(bookings.clientId, user.id);
@@ -353,7 +674,11 @@ export class BookingsService {
     }
     const scopeCond =
       q.scope === 'active'
-        ? inArray(bookings.status, [...ACTIVE_BOOKING_STATUSES, 'disputed'])
+        ? or(
+            inArray(bookings.status, [...ACTIVE_BOOKING_STATUSES, 'disputed']),
+            // Prix ou report proposé par l'artisan, en attente de validation du client.
+            and(eq(bookings.status, 'pending_payment'), or(isNotNull(bookings.artisanAcceptedAt), eq(bookings.priceOnRequest, true))),
+          )
         : q.scope === 'past'
           ? inArray(bookings.status, [...TERMINAL_BOOKING_STATUSES])
           : undefined;
@@ -479,16 +804,18 @@ export class BookingsService {
     if (quote.expiresAt < new Date()) throw gone('quote_expired', "Ce devis a expiré. Demandez à l'artisan de le renvoyer.");
     let payment: PaymentSessionDto | null = null;
     let updated: BookingRow;
+    // La réduction parrainage s'applique aussi au devis.
+    const netQuote = Math.max(0, quote.totalCents - b.discountCents);
     if (body.accept) {
       updated = await this.state.transition(b.id, 'in_progress', 'client', user.id, {
         inTx: async (tx) => {
           await tx.update(quotes).set({ status: 'accepted', answeredAt: new Date() }).where(eq(quotes.id, quote.id));
         },
-        patch: { totalCents: quote.totalCents },
+        patch: { totalCents: netQuote },
       });
-      const extra = quote.totalCents - b.authorizedCents;
+      const extra = netQuote - b.authorizedCents;
       if (extra > 0) {
-        if (quoteNeedsNewAuthorization(quote.totalCents, b.authorizedCents)) {
+        if (quoteNeedsNewAuthorization(netQuote, b.authorizedCents)) {
           // Dépassement > 20 % : le client valide une autorisation complémentaire dans l'app.
           payment = await this.payments.createSupplement(updated, extra);
         } else {
@@ -606,7 +933,10 @@ export class BookingsService {
     const capturable = (await this.payments.capturable(b.id)).reduce((s, p) => s + p.amountCents, 0);
     const target = Math.min(opts.amountCents ?? closingAmount(b, accepted?.total ?? null), capturable);
     const travelOnly = opts.travelOnly ?? b.travelOnly;
-    const fee = computeCommission({ capturedCents: target, travelOnly, commissionRate: b.commissionRate });
+    // Réduction parrainage financée par DEPANO : commission calculée sur le montant avant réduction, diminuée de la
+    // réduction (l'artisan touche son net habituel tant que la réduction ne dépasse pas la commission).
+    const discount = travelOnly ? 0 : b.discountCents;
+    const fee = Math.max(0, computeCommission({ capturedCents: target + discount, travelOnly, commissionRate: b.commissionRate }) - discount);
     let captured = 0;
     try {
       captured = await this.payments.capture(b, target, fee);
@@ -624,6 +954,8 @@ export class BookingsService {
     if (b.artisanId) {
       await this.conn.db.update(artisanProfiles).set({ completedCount: sql`${artisanProfiles.completedCount} + 1` }).where(eq(artisanProfiles.id, b.artisanId));
     }
+    // Déplacement seul : la réduction n'a pas servi, le crédit redevient disponible.
+    if (travelOnly) await this.referral.release(b.id);
     if (captured > 0) await this.jobs.add('invoices', 'generate', { bookingId: b.id }, { jobId: `invoice-${b.id}` });
     return { captured, commission: captured ? fee : 0 };
   }

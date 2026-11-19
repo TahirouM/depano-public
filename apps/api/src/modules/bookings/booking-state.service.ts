@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { DEEP_LINKS, findTransition, type Actor, type BookingStatus } from '@depano/schemas';
+import { DEEP_LINKS, findTransition, formatEuros, type Actor, type BookingStatus } from '@depano/schemas';
 import { artisanProfiles, bookingEvents, bookings, eq, type Tx } from '@depano/db';
 import { DbConnection } from '../../infra/db';
 import { RealtimeService } from '../../infra/realtime';
 import { NotificationsService, type NotifyInput } from '../notifications/notifications.service';
 import { ChatService } from '../chat/chat.service';
+import { releaseReferralCredit } from '../me/referral.service';
 import { conflict, notFound } from '../../common/errors';
 import { formatParis } from '../../common/time';
 
@@ -35,7 +36,11 @@ const TIMESTAMP_COLUMNS: Partial<Record<BookingStatus, keyof BookingRow>> = {
   expired: 'cancelledAt',
 };
 
+/** Fins sans intervention : le crédit de parrainage consommé est rendu. */
+const RELEASES_REFERRAL: BookingStatus[] = ['cancelled_by_client', 'cancelled_by_artisan', 'expired'];
+
 const SYSTEM_MESSAGES: Partial<Record<BookingStatus, string>> = {
+  pending_payment: "Prix proposé par l'artisan : en attente de validation du client.",
   accepted: 'Intervention confirmée.',
   en_route: "L'artisan est en route.",
   arrived: "L'artisan est arrivé.",
@@ -93,6 +98,7 @@ export class BookingStateService {
         lat: opts.lat ?? null,
         lng: opts.lng ?? null,
       });
+      if (RELEASES_REFERRAL.includes(to)) await releaseReferralCredit(tx, bookingId);
       if (opts.inTx) await opts.inTx(tx, updated!);
       return { before: b, after: updated! };
     });
@@ -100,9 +106,19 @@ export class BookingStateService {
     return after;
   }
 
-  /** Journalise la création (aucune transition de la machine). */
-  async logCreation(tx: Tx, bookingId: string, actorUserId: string) {
-    await tx.insert(bookingEvents).values({ bookingId, fromStatus: null, toStatus: 'pending_payment', actor: 'client', actorUserId });
+  /**
+   * Journalise la création (aucune transition de la machine) : `pending_payment` en général, `requested` pour une
+   * demande de prix (« Autre »), `pending_payment` côté artisan pour un report qu'il propose.
+   */
+  async logCreation(tx: Tx, bookingId: string, actorUserId: string, opts: { status?: BookingStatus; actor?: Actor; note?: string } = {}) {
+    await tx.insert(bookingEvents).values({
+      bookingId,
+      fromStatus: null,
+      toStatus: opts.status ?? 'pending_payment',
+      actor: opts.actor ?? 'client',
+      actorUserId,
+      note: opts.note ?? null,
+    });
   }
 
   private async artisanInfo(artisanId: string | null) {
@@ -137,12 +153,26 @@ export class BookingStateService {
     const toArtisan = (n: Omit<NotifyInput, 'link' | 'data'>) => artisan && out.push([artisan.userId, { ...n, link, data }]);
     const when = b.scheduledAt ? formatParis(b.scheduledAt) : '';
     switch (b.status as BookingStatus) {
+      case 'requested':
+        toArtisan({ type: 'booking_requested', title: 'Nouvelle demande de rendez-vous', body: `${b.problemReason} — ${when}. Acceptez ou refusez la demande.` });
+        break;
+      case 'pending_payment':
+        // Demande « Autre » chiffrée par l'artisan : le client valide le prix en payant.
+        toClient({
+          type: 'price_proposed',
+          title: 'Prix proposé',
+          body: `${artisan?.name ?? "L'artisan"} propose ${formatEuros(b.totalCents)} pour « ${b.problemReason} » le ${when}. Validez pour confirmer le rendez-vous.`,
+        });
+        break;
       case 'accepted':
         if (b.kind === 'urgent') {
           toClient({ type: 'booking_accepted', title: 'Artisan trouvé !', body: `${artisan?.name ?? 'Un artisan'} a accepté votre demande et se prépare.` });
+        } else if (actor === 'artisan') {
+          toClient({ type: 'booking_accepted', title: 'Rendez-vous confirmé', body: `${artisan?.name ?? "L'artisan"} a accepté votre demande : intervention le ${when}.` });
         } else {
+          // Prix proposé ou report validé par le client.
           toClient({ type: 'booking_accepted', title: 'Rendez-vous confirmé', body: `${artisan?.name ?? "L'artisan"} interviendra le ${when}.` });
-          toArtisan({ type: 'booking_created', title: 'Nouveau rendez-vous', body: `${b.problemReason} — ${when}.` });
+          toArtisan({ type: 'booking_created', title: 'Rendez-vous confirmé', body: `Le client a validé : ${b.problemReason} — ${when}.` });
         }
         break;
       case 'en_route':
@@ -169,10 +199,30 @@ export class BookingStateService {
         toArtisan({ type: 'payout', title: 'Intervention clôturée', body: 'Le paiement a été capturé et sera versé sur votre compte.' });
         break;
       case 'cancelled_by_client':
-        toArtisan({ type: 'booking_cancelled', title: 'Intervention annulée', body: `Le client a annulé « ${b.problemReason} ».` });
+        if (actor === 'system') {
+          // Prix ou report proposé par l'artisan, jamais validé par le client.
+          toClient({ type: 'booking_cancelled', title: 'Proposition expirée', body: `La proposition pour « ${b.problemReason} » n'a pas été validée à temps.` });
+          toArtisan({ type: 'booking_cancelled', title: 'Proposition expirée', body: `Le client n'a pas validé « ${b.problemReason} » : le créneau est libéré.` });
+        } else {
+          toArtisan({ type: 'booking_cancelled', title: before.status === 'requested' ? 'Demande annulée' : 'Intervention annulée', body: `Le client a annulé « ${b.problemReason} ».` });
+        }
         break;
       case 'cancelled_by_artisan':
-        toClient({ type: 'booking_cancelled', title: "L'artisan a annulé", body: 'Nous sommes désolés. Nous vous proposons une reprogrammation prioritaire.' });
+        if (before.status === 'requested') {
+          toClient({
+            type: 'booking_cancelled',
+            title: 'Demande refusée',
+            body: `${artisan?.name ?? "L'artisan"} ne peut pas assurer ce rendez-vous. Votre empreinte bancaire est libérée : choisissez un autre créneau ou un autre artisan.`,
+          });
+        } else {
+          toClient({ type: 'booking_cancelled', title: "L'artisan a annulé", body: 'Nous sommes désolés. Nous vous proposons une reprogrammation prioritaire.' });
+        }
+        break;
+      case 'expired':
+        if (b.kind === 'scheduled') {
+          toClient({ type: 'booking_cancelled', title: 'Demande expirée', body: `${artisan?.name ?? "L'artisan"} n'a pas répondu à temps. Votre empreinte bancaire est libérée.` });
+          toArtisan({ type: 'booking_cancelled', title: 'Demande expirée', body: `La demande « ${b.problemReason} » a expiré faute de réponse.` });
+        }
         break;
       case 'disputed':
         toArtisan({ type: 'booking_status', title: 'Litige ouvert', body: 'Le client a signalé un problème. Le paiement est suspendu le temps de l’arbitrage.' });

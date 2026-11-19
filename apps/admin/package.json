@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start -p 3001",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "demo:record": "node scripts/record-demo.mjs",
+    "demo:deploy": "cd ../.. && vercel link --yes --project depano-admin-demo && vercel pull --yes --environment=production && NEXT_PUBLIC_DEMO=1 vercel build --prod && vercel deploy --prebuilt --prod --yes"
   },
   "dependencies": {
     "@depano/schemas": "workspace:*",

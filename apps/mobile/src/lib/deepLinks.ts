@@ -22,6 +22,16 @@ export function resolveDeepLink(link: string | null | undefined, role: Role): st
     case 'intervention':
       if (!id) return pro ? '/pro/interventions' : '/activite';
       return pro ? `/pro/interventions/${id}` : `/activite/${id}`;
+    case 'rendez-vous':
+      // Onglet « Rendez-vous » du client (dossier `activite`).
+      if (pro) return '/pro/planning';
+      return id ? `/activite/${id}` : '/activite';
+    case 'interventions':
+      // Historique des interventions réalisées (client) ; liste des interventions (artisan).
+      if (!id) return pro ? '/pro/interventions' : '/interventions';
+      return pro ? `/pro/interventions/${id}` : `/interventions/${id}`;
+    case 'parrainage':
+      return pro ? '/pro/profil' : '/profil/parrainage';
     case 'messages':
       if (!id) return pro ? '/pro/messages' : '/messages';
       return pro ? `/pro/messages/${id}` : `/messages/${id}`;

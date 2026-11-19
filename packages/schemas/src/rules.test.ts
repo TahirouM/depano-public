@@ -42,13 +42,15 @@ describe('pricing', () => {
     expect(quoteNeedsNewAuthorization(12001, 10000)).toBe(true);
   });
 
-  it('applies the 2 h free cancellation window', () => {
+  it('free cancellation only during the first hour after booking', () => {
     const now = new Date('2026-10-19T10:00:00Z');
     const base = { now, hasGuarantee: false, status: 'accepted' };
-    expect(clientCancellationIsFree({ ...base, scheduledAt: new Date('2026-10-19T12:30:00Z') })).toBe(true);
-    expect(clientCancellationIsFree({ ...base, scheduledAt: new Date('2026-10-19T11:00:00Z') })).toBe(false);
-    expect(clientCancellationIsFree({ ...base, scheduledAt: new Date('2026-10-19T11:00:00Z'), hasGuarantee: true })).toBe(true);
-    expect(clientCancellationIsFree({ ...base, scheduledAt: new Date('2026-10-19T11:00:00Z'), artisanLateMinutes: 31 })).toBe(true);
+    expect(clientCancellationIsFree({ ...base, bookedAt: new Date('2026-10-19T09:15:00Z') })).toBe(true);
+    expect(clientCancellationIsFree({ ...base, bookedAt: new Date('2026-10-19T09:00:00Z') })).toBe(true);
+    expect(clientCancellationIsFree({ ...base, bookedAt: new Date('2026-10-19T08:30:00Z') })).toBe(false);
+    expect(clientCancellationIsFree({ ...base, bookedAt: new Date('2026-10-18T10:00:00Z'), hasGuarantee: true })).toBe(true);
+    expect(clientCancellationIsFree({ ...base, bookedAt: new Date('2026-10-18T10:00:00Z'), artisanLateMinutes: 31 })).toBe(true);
+    expect(clientCancellationIsFree({ ...base, bookedAt: new Date('2026-10-18T10:00:00Z'), status: 'requested' })).toBe(true);
   });
 });
 

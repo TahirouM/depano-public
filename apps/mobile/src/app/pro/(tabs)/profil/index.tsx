@@ -1,6 +1,6 @@
-import { ProfileScreen } from '@/features/profile/ProfileScreen';
+import { ArtisanProfileScreen } from '@/features/artisan/account/ArtisanProfileScreen';
 
-/** Fondations posées (identité, rôle, paramètres) ; l'agent artisan complète les sous-écrans. */
+/** Mon profil : bannière, photo, biographie, réalisations, promotion, raccourcis de l'espace pro. */
 export default function ArtisanProfile() {
-  return <ProfileScreen as="artisan" />;
+  return <ArtisanProfileScreen />;
 }

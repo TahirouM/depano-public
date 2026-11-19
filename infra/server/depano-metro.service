@@ -1,0 +1,17 @@
+[Unit]
+Description=DEPANO app mobile — serveur Metro pour Expo Go (bundle production, minifié)
+After=network-online.target depano-api.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/depano/apps/mobile
+EnvironmentFile=/opt/depano/.env.mobile
+Environment=CI=1
+Environment=EXPO_NO_TELEMETRY=1
+Environment=REACT_NATIVE_PACKAGER_HOSTNAME=167.114.71.66
+ExecStart=/usr/bin/pnpm exec expo start --no-dev --minify --port 8081 --host lan
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

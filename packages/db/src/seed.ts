@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createDb, sql } from './index';
 import * as s from './schema';
+import { CATALOG } from './catalog';
 
 /**
  * Données de démo (Marseille) reprenant les exemples de la maquette Figma.
@@ -8,30 +9,6 @@ import * as s from './schema';
  * Connexion en dev : n'importe quel numéro ci-dessous, OTP affiché dans la console de l'API.
  */
 
-const CATALOG: Record<'plomberie' | 'electricite' | 'energetique', [slug: string, name: string, kind: 'maintenance' | 'repair' | 'both', price: number, minutes: number, urgent: boolean][]> = {
-  plomberie: [
-    ['fuite-eau', "Recherche et réparation de fuite d'eau", 'repair', 9000, 60, true],
-    ['debouchage', 'Débouchage canalisation / WC', 'repair', 8500, 60, true],
-    ['chauffe-eau-panne', 'Dépannage chauffe-eau / ballon', 'repair', 11000, 90, true],
-    ['robinetterie', 'Remplacement robinet / mitigeur', 'repair', 7500, 45, false],
-    ['chasse-eau', "Réparation chasse d'eau", 'repair', 6500, 45, false],
-    ['entretien-chauffe-eau', 'Détartrage chauffe-eau', 'maintenance', 12000, 90, false],
-  ],
-  electricite: [
-    ['panne-courant', 'Panne de courant / disjoncteur', 'repair', 9500, 60, true],
-    ['prise-interrupteur', 'Remplacement prise ou interrupteur', 'repair', 6000, 30, false],
-    ['tableau-electrique', 'Mise en sécurité tableau électrique', 'repair', 18000, 180, false],
-    ['luminaire', 'Pose de luminaire', 'repair', 6500, 45, false],
-    ['diagnostic-elec', 'Diagnostic installation électrique', 'maintenance', 13000, 90, false],
-  ],
-  energetique: [
-    ['chaudiere-panne', 'Dépannage chaudière gaz', 'repair', 12000, 90, true],
-    ['entretien-chaudiere', 'Entretien annuel chaudière', 'maintenance', 11000, 60, false],
-    ['clim-panne', 'Dépannage climatisation / PAC', 'repair', 13000, 90, true],
-    ['entretien-clim', 'Entretien climatisation', 'maintenance', 9500, 60, false],
-    ['radiateur', 'Purge et équilibrage radiateurs', 'maintenance', 8000, 60, false],
-  ],
-};
 
 const ARTISANS = [
   { first: 'Karim', last: 'Benali', company: 'KB Plomberie', phone: '+33600000101', domains: ['plomberie'], city: 'Marseille 5e', lat: 43.2925, lng: 5.3986, rating: 4.9, count: 128, urgent: true, quals: [] as string[] },
@@ -56,6 +33,45 @@ const REVIEWERS = [
   { phone: '+33600000022', first: 'Inès', last: 'Belkacem', line1: '3 avenue du Prado', postalCode: '13008', lat: 43.2752, lng: 5.3897 },
 ];
 const DAY = 86_400_000;
+
+/** Comptes rendus des interventions clôturées (« Voir le compte rendu » côté client), par prestation puis par métier. */
+const REPORTS: Record<string, { notes: string; materials: string }> = {
+  'fuite-eau': {
+    notes: 'Fuite localisée sur le raccord du flexible d’alimentation sous l’évier (joint fibre écrasé). Raccord démonté, joint remplacé, serrage contrôlé. Mise en eau 15 min sans suintement.',
+    materials: 'Joint fibre 15/21, flexible inox 40 cm, ruban PTFE',
+  },
+  'panne-courant': {
+    notes: 'Disjonction due à un défaut d’isolement sur le circuit prises de la cuisine (bouchon de prise humide derrière le plan de travail). Prise remplacée, circuit testé à l’ohmmètre, différentiel 30 mA réarmé et testé.',
+    materials: 'Prise 2P+T 16 A, boîte d’encastrement étanche, bornes de connexion',
+  },
+  'chaudiere-panne': {
+    notes: 'Mise en sécurité répétée : électrode d’ionisation encrassée. Nettoyage de l’électrode et du brûleur, contrôle de la pression (1,4 bar) et de l’étanchéité gaz. Chaudière relancée, fonctionnement vérifié en chauffage et eau chaude.',
+    materials: 'Électrode d’ionisation, joint de chambre de combustion',
+  },
+  plomberie: {
+    notes: 'Diagnostic sur place, remplacement de la pièce défectueuse et contrôle d’étanchéité après remise en eau. Installation laissée propre.',
+    materials: 'Joints, raccords laiton, ruban PTFE',
+  },
+  electricite: {
+    notes: 'Contrôle du circuit concerné, remplacement de l’appareillage défectueux, test du différentiel et vérification des serrages au tableau.',
+    materials: 'Appareillage 16 A, bornes de connexion',
+  },
+  energetique: {
+    notes: 'Nettoyage et contrôle de l’appareil, vérification des pressions et des sécurités, essai de fonctionnement complet avec le client.',
+    materials: 'Kit d’entretien, joints',
+  },
+};
+
+/** Heure locale Europe/Paris dans `daysAhead` jours (jamais un dimanche, jour sans disponibilités). */
+function parisAt(daysAhead: number, hh: number, mm = 0) {
+  let day = new Date(Date.now() + daysAhead * DAY);
+  if (new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(day) === 'Sun') day = new Date(day.getTime() + DAY);
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(day);
+  const naive = new Date(`${date}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00Z`);
+  const offset = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', timeZoneName: 'shortOffset' }).formatToParts(naive).find((p) => p.type === 'timeZoneName')!.value;
+  const hours = Number(/GMT([+-]\d+)/.exec(offset)?.[1] ?? 0);
+  return new Date(naive.getTime() - hours * 3600_000);
+}
 const ref = (i: number, j: number) => `DEP-R${i}${j}${Math.random().toString(36).slice(2, 5).toUpperCase().padEnd(3, 'X')}`;
 
 async function main() {
@@ -63,7 +79,7 @@ async function main() {
 
   await db.execute(sql`TRUNCATE TABLE audit_logs, files, notifications, messages, conversations, invoices, webhook_events,
     payments, reviews, disputes, intervention_reports, quote_lines, quotes, dispatch_offers, booking_locations,
-    booking_events, bookings, favorites, addresses, availability_exceptions, availability_rules, artisan_documents,
+    booking_events, referral_credits, bookings, favorites, addresses, availability_exceptions, availability_rules, artisan_documents,
     artisan_services, artisan_profiles, services, domains, zones, consents, push_tokens, passkeys, sessions,
     otp_codes, client_profiles, users CASCADE`);
 
@@ -120,6 +136,7 @@ async function main() {
     authors.push({ userId: u!.id, addressId: addr!.id });
   }
   let reviewCount = 0;
+  const artisanIds = new Map<string, { userId: string; profileId: string }>();
 
   for (const a of ARTISANS) {
     const [u] = await db
@@ -160,6 +177,7 @@ async function main() {
         approvedBy: admin!.id,
       })
       .returning();
+    artisanIds.set(a.phone, { userId: u!.id, profileId: p!.id });
     const mine = serviceRows.filter((sv) => a.domains.includes(sv.domain));
     await db.insert(s.artisanServices).values(
       mine.map((sv) => ({ artisanId: p!.id, serviceId: sv.id, priceCents: sv.referencePriceCents + Math.round((Math.random() - 0.5) * 2000), durationMinutes: sv.defaultDurationMinutes })),
@@ -209,6 +227,14 @@ async function main() {
         })
         .returning();
       await db.insert(s.conversations).values({ bookingId: b!.id, clientUserId: author.userId, artisanUserId: u!.id });
+      const report = REPORTS[sv.slug] ?? REPORTS[sv.domain]!;
+      await db.insert(s.interventionReports).values({
+        bookingId: b!.id,
+        feasible: true,
+        notes: report.notes,
+        materials: report.materials,
+        createdAt: new Date(closedAt.getTime() - 10 * 60_000),
+      });
       await db.insert(s.reviews).values({
         bookingId: b!.id,
         artisanId: p!.id,
@@ -231,6 +257,104 @@ async function main() {
   await db.insert(s.artisanProfiles).values({
     userId: pending!.id, status: 'pending_review', siret: '91234567800012', companyName: 'MS Dépannage', apeCode: '43.22A', companyActive: true,
     displayName: 'Mehdi S.', domains: ['plomberie'], baseLat: 43.28, baseLng: 5.36, baseCity: 'Marseille 6e', submittedAt: new Date(),
+  });
+
+  // Parrainage : Léa a saisi le code de Camille, 10 € pour chacune.
+  const lea = authors[1]!.userId;
+  await db.insert(s.clientProfiles).values({ userId: lea, referralCode: 'LEAFAB24', referredByUserId: client!.id });
+  await db.insert(s.referralCredits).values([
+    { userId: lea, otherUserId: client!.id, role: 'referee', amountCents: 1000 },
+    { userId: client!.id, otherUserId: lea, role: 'referrer', amountCents: 1000 },
+  ]);
+
+  // Profil mis en avant (« Promouvoir mon compte », abonnement factice renouvelé automatiquement).
+  const nadia = artisanIds.get('+33600000104')!;
+  await db
+    .update(s.artisanProfiles)
+    .set({ proUntil: new Date(Date.now() + 20 * DAY), promotionAutoRenew: true, promotionSubscriptionRef: 'sub_fake_seed_nadia' })
+    .where(sql`${s.artisanProfiles.id} = ${nadia.profileId}`);
+
+  // Planning de Karim (+33600000101) avec Camille : une demande de RDV, une demande de prix, un RDV confirmé
+  // annoté, et un événement personnel.
+  const karim = artisanIds.get('+33600000101')!;
+  const fuite = serviceRows.find((sv) => sv.slug === 'fuite-eau')!;
+  const [karimFuite] = await db
+    .select({ price: s.artisanServices.priceCents })
+    .from(s.artisanServices)
+    .where(sql`${s.artisanServices.artisanId} = ${karim.profileId} and ${s.artisanServices.serviceId} = ${fuite.id}`);
+  const demo = async (v: { ref: string; status: 'requested' | 'accepted'; at: Date; minutes: number; base: number; priceOnRequest?: boolean; reason: string; description?: string; note?: string }) => {
+    const total = v.base + 2500;
+    const [b] = await db
+      .insert(s.bookings)
+      .values({
+        reference: v.ref,
+        kind: 'scheduled',
+        status: v.status,
+        clientId: client!.id,
+        artisanId: karim.profileId,
+        domain: 'plomberie',
+        serviceId: v.priceOnRequest ? null : fuite.id,
+        scheduledType: 'repair',
+        addressId: clientAddr!.id,
+        problemReason: v.reason,
+        problemDescription: v.description ?? null,
+        scheduledAt: v.at,
+        endsAt: new Date(v.at.getTime() + v.minutes * 60_000),
+        basePriceCents: v.base,
+        travelFeeCents: 2500,
+        totalCents: total,
+        authorizedCents: v.priceOnRequest ? 0 : total,
+        commissionRate: 0.15,
+        priceOnRequest: !!v.priceOnRequest,
+        artisanAcceptedAt: v.status === 'accepted' ? new Date(Date.now() - 2 * 3600_000) : null,
+        acceptedAt: v.status === 'accepted' ? new Date(Date.now() - 2 * 3600_000) : null,
+        artisanNote: v.note ?? null,
+        createdAt: new Date(Date.now() - 3 * 3600_000),
+      })
+      .returning();
+    await db.insert(s.bookingEvents).values([
+      { bookingId: b!.id, fromStatus: null, toStatus: v.priceOnRequest ? 'requested' : 'pending_payment', actor: 'client', actorUserId: client!.id, createdAt: new Date(Date.now() - 3 * 3600_000) },
+      ...(v.priceOnRequest ? [] : [{ bookingId: b!.id, fromStatus: 'pending_payment' as const, toStatus: 'requested' as const, actor: 'system' as const, actorUserId: client!.id, createdAt: new Date(Date.now() - 3 * 3600_000 + 60_000) }]),
+      ...(v.status === 'accepted' ? [{ bookingId: b!.id, fromStatus: 'requested' as const, toStatus: 'accepted' as const, actor: 'artisan' as const, actorUserId: karim.userId, createdAt: new Date(Date.now() - 2 * 3600_000) }] : []),
+    ]);
+    if (!v.priceOnRequest) {
+      await db.insert(s.payments).values({ bookingId: b!.id, provider: 'fake', providerRef: `pi_fake_seed_${v.ref}`, kind: 'authorization', status: 'authorized', amountCents: total, authorizedAt: new Date(), paymentMethodRef: 'pm_fake_visa' });
+    }
+    // Messagerie ouverte seulement après l'acceptation.
+    if (v.status === 'accepted') await db.insert(s.conversations).values({ bookingId: b!.id, clientUserId: client!.id, artisanUserId: karim.userId });
+  };
+  await demo({ ref: 'DEP-DEMO01', status: 'requested', at: parisAt(2, 10), minutes: 60, base: karimFuite?.price ?? fuite.referencePriceCents, reason: 'Fuite sous l’évier' });
+  await demo({ ref: 'DEP-DEMO02', status: 'requested', at: parisAt(3, 15), minutes: 60, base: 0, priceOnRequest: true, reason: 'Autre', description: "Installation d'un adoucisseur d'eau sous l'évier de la cuisine." });
+  await demo({ ref: 'DEP-DEMO03', status: 'accepted', at: parisAt(4, 9), minutes: 60, base: karimFuite?.price ?? fuite.referencePriceCents, reason: 'Robinet qui goutte', note: 'Prévoir un mitigeur 15/21 et du téflon.' });
+  // Tarifs de Karim : un motif personnel (hors catalogue) et une prestation du catalogue désactivée.
+  const [mitigeur] = await db
+    .insert(s.services)
+    .values({
+      domain: 'plomberie',
+      slug: 'custom-seed-mitigeur-thermostatique',
+      name: 'Remplacement de mitigeur thermostatique',
+      kind: 'repair',
+      urgentEligible: false,
+      referencePriceCents: 14000,
+      defaultDurationMinutes: 75,
+      sortOrder: 1000,
+      ownerArtisanId: karim.profileId,
+    })
+    .returning();
+  await db.insert(s.artisanServices).values({ artisanId: karim.profileId, serviceId: mitigeur!.id, priceCents: 14000, durationMinutes: 75 });
+  const chasse = serviceRows.find((sv) => sv.slug === 'chasse-eau')!;
+  await db
+    .update(s.artisanServices)
+    .set({ active: false })
+    .where(sql`${s.artisanServices.artisanId} = ${karim.profileId} and ${s.artisanServices.serviceId} = ${chasse.id}`);
+
+  await db.insert(s.availabilityExceptions).values({
+    artisanId: karim.profileId,
+    startsAt: parisAt(1, 12, 30),
+    endsAt: parisAt(1, 14),
+    reason: 'Manger avec Grégoire',
+    kind: 'personal',
+    color: 'green',
   });
 
   console.log(`✔ seed : ${serviceRows.length} prestations, ${ARTISANS.length + 1} artisans, ${reviewCount} avis, client ${client!.phone}, admin ${admin!.phone}`);

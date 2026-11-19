@@ -1,7 +1,8 @@
-import { Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
+import { Controller, Get, HttpCode, Inject, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   AnswerQuoteBody,
+  ArtisanNoteBody,
   BookingListQuery,
   CancelBookingBody,
   CompleteBody,
@@ -9,7 +10,9 @@ import {
   CreateQuoteBody,
   DisputeBody,
   LocationBody,
+  NotFeasibleBody,
   ReportBody,
+  RespondRequestBody,
   ReviewBody,
   ReviewReplyBody,
   TransitionBody,
@@ -46,6 +49,29 @@ export class BookingsController {
   @HttpCode(200)
   confirmPayment(@CurrentUser() user: AuthUser, @IdParam() id: string) {
     return this.bookings.confirmPaymentDetail(user, id);
+  }
+
+  @Post(':id/payment-session')
+  @HttpCode(200)
+  paymentSession(@CurrentUser() user: AuthUser, @IdParam() id: string) {
+    return this.bookings.paymentSession(user, id);
+  }
+
+  @Post(':id/respond')
+  @HttpCode(200)
+  respond(@CurrentUser() user: AuthUser, @IdParam() id: string, @ZBody(RespondRequestBody) body: z.output<typeof RespondRequestBody>) {
+    return this.bookings.respond(user, id, body);
+  }
+
+  @Post(':id/not-feasible')
+  @HttpCode(200)
+  notFeasible(@CurrentUser() user: AuthUser, @IdParam() id: string, @ZBody(NotFeasibleBody) body: z.output<typeof NotFeasibleBody>) {
+    return this.bookings.notFeasible(user, id, body);
+  }
+
+  @Put(':id/artisan-note')
+  artisanNote(@CurrentUser() user: AuthUser, @IdParam() id: string, @ZBody(ArtisanNoteBody) body: z.output<typeof ArtisanNoteBody>) {
+    return this.bookings.setArtisanNote(user, id, body);
   }
 
   @Post(':id/transition')

@@ -67,6 +67,38 @@ export class PaymentsService {
     return { provider: this.provider.name, paymentIntentId: pi.id, setupIntentId: null, clientSecret: pi.clientSecret, customerId, ephemeralKey, amountCents: b.totalCents };
   }
 
+  /**
+   * Session de paiement d'une intervention existante (prix proposé, report) : réutilise l'empreinte en attente si
+   * elle couvre encore le montant, sinon annule les sessions obsolètes et en crée une nouvelle. Idempotent.
+   */
+  async sessionFor(b: BookingRow): Promise<PaymentSessionDto> {
+    const rows = await this.conn.db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.bookingId, b.id), inArray(payments.kind, ['authorization', 'setup']), inArray(payments.status, ['requires_action', 'authorized'])))
+      .orderBy(desc(payments.createdAt));
+    const reusable = rows.find((p) => p.providerRef && p.amountCents === b.totalCents && p.kind === (this.needsDeferredAuthorization(b) ? 'setup' : 'authorization'));
+    if (reusable) {
+      const intent = await this.provider.getIntent(reusable.providerRef!);
+      if (intent.clientSecret && !['failed', 'cancelled'].includes(intent.status)) {
+        const customerId = await this.ensureCustomer(b.clientId);
+        return {
+          provider: this.provider.name,
+          paymentIntentId: reusable.kind === 'authorization' ? reusable.providerRef : null,
+          setupIntentId: reusable.kind === 'setup' ? reusable.providerRef : null,
+          clientSecret: intent.clientSecret,
+          customerId,
+          ephemeralKey: await this.provider.createEphemeralKey(customerId).catch(() => null),
+          amountCents: b.totalCents,
+        };
+      }
+    }
+    // Montant changé (prix proposé) ou session abandonnée : on libère avant d'en créer une nouvelle.
+    await this.releaseAll(b.id);
+    await this.conn.db.update(bookings).set({ authorizedCents: 0 }).where(eq(bookings.id, b.id));
+    return this.createSession(b);
+  }
+
   /** Autorisation complémentaire (devis > autorisé + 20 %). */
   async createSupplement(b: BookingRow, amountCents: number, opts: { offSession?: boolean } = {}): Promise<PaymentSessionDto> {
     const customerId = await this.ensureCustomer(b.clientId);

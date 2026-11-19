@@ -29,6 +29,7 @@ import {
   favorites,
   inArray,
   invoices,
+  isNotNull,
   isNull,
   messages,
   ne,
@@ -196,13 +197,17 @@ export class MeService {
 
   async badges(user: AuthUser): Promise<BadgesDto> {
     const [artisan] = await this.conn.db.select({ id: artisanProfiles.id }).from(artisanProfiles).where(eq(artisanProfiles.userId, user.id));
+    // Activité : interventions en cours, dont les demandes de RDV (artisan) et les propositions à valider (client).
     const [act] = await this.conn.db
       .select({ n: sql<number>`count(*)::int` })
       .from(bookings)
       .where(
-        and(
-          inArray(bookings.status, [...ACTIVE_BOOKING_STATUSES, 'disputed']),
-          or(eq(bookings.clientId, user.id), artisan ? eq(bookings.artisanId, artisan.id) : sql`false`),
+        or(
+          and(
+            inArray(bookings.status, [...ACTIVE_BOOKING_STATUSES, 'disputed']),
+            or(eq(bookings.clientId, user.id), artisan ? eq(bookings.artisanId, artisan.id) : sql`false`),
+          ),
+          and(eq(bookings.status, 'pending_payment'), isNotNull(bookings.artisanAcceptedAt), eq(bookings.clientId, user.id)),
         ),
       );
     return { notifications: await this.notifications.unreadCount(user.id), messages: await this.chat.totalUnread(user.id), activity: act?.n ?? 0 };
